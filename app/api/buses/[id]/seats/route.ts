@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma/client';
 import { fetchBusLocationAndSeats, fetchRouteStations, fetchBusStationInfo } from '@/lib/api/publicDataApi';
 import { BusStop } from '@prisma/client';
@@ -6,16 +6,17 @@ import { BusStop } from '@prisma/client';
 // 개발 환경인지 확인
 const isDevelopment = process.env.NODE_ENV === 'development';
 
+
 // GET 요청 처리: 특정 버스 노선의 시간대별 좌석 정보 조회
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const busRouteId = params.id;
+    const { id: busRouteId } = await params;
     
     // 쿼리 파라미터에서 요일, 시간대, 정류장 필터 가져오기
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = new URL(req.url);
     const dayOfWeekParams = searchParams.getAll('dayOfWeek');
     const hourOfDayParam = searchParams.get('hourOfDay');
     const stopIdParam = searchParams.get('stopId');

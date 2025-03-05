@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma/client';
 import { fetchRouteStations } from '@/lib/api/publicDataApi';
 import { BusStop } from '@prisma/client';
@@ -8,11 +8,11 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 
 // GET 요청 처리: 특정 버스 노선의 정류장 목록 조회
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const busRouteId = params.id;
+    const { id: busRouteId } = await params;
     
     // 버스 노선 정보 조회
     const busRoute = await prisma.busRoute.findUnique({
