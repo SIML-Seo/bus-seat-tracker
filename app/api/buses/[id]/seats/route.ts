@@ -87,9 +87,27 @@ export async function GET(
           // 이미 캐시에 있는지 확인
           if (!stationInfoCache.has(item.stopId)) {
             try {
-              const stationInfo = await fetchBusStationInfo(item.stopId);
-              if (stationInfo && stationInfo.length > 0) {
-                stationInfoCache.set(item.stopId, stationInfo[0].stationName);
+              // 1. 먼저 busStop 테이블에서 정보 조회
+              const busStop = await prisma.busStop.findFirst({
+                where: {
+                  busRouteId: item.busRouteId,
+                  stationId: item.stopId
+                },
+                select: {
+                  stationName: true
+                }
+              });
+              
+              // busStop 테이블에서 정보를 찾은 경우
+              if (busStop?.stationName) {
+                stationInfoCache.set(item.stopId, busStop.stationName);
+              } 
+              // 2. busStop 테이블에서 찾지 못한 경우 API에서 정보 가져오기
+              else {
+                const stationInfo = await fetchBusStationInfo(item.stopId);
+                if (stationInfo && stationInfo.length > 0) {
+                  stationInfoCache.set(item.stopId, stationInfo[0].stationName);
+                }
               }
             } catch (error) {
               console.error(`정류장 정보 조회 오류 (정류장 ID: ${item.stopId}):`, error);

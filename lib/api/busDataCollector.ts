@@ -472,12 +472,34 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
       // 필터링된 위치만 DB에 저장
       await Promise.all(filteredLocations.map(async (location: BusLocation) => {
         try {
+          // 정류장 ID가 있을 경우 BusStop에서 정류장 이름 조회
+          let stopName: string | null = null;
+          
+          if (location.stationId) {
+            const stopId = String(location.stationId);
+            
+            // 먼저 DB에서 정류장 정보 검색
+            const busStop = await prisma.busStop.findFirst({
+              where: {
+                busRouteId: routeId,
+                stationId: stopId
+              },
+              select: {
+                stationName: true
+              }
+            });
+            
+            if (busStop?.stationName) {
+              stopName = busStop.stationName;
+            }
+          }
+          
           await prisma.busLocation.create({
             data: {
               busRouteId: routeId,
               busId: String(location.vehId),
               stopId: location.stationId ? String(location.stationId) : null, 
-              stopName: null,
+              stopName,  // 찾은 정류장 이름 또는 null
               remainingSeats: location.remainSeatCnt,
               updatedAt: new Date(),
             }
@@ -545,14 +567,34 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
     const statsByStopRoute = new Map<string, { seats: number[], busRouteId: string, stopName: string }>();
     
     // 정류장 정보 가져오기 (API 호출 필요시)
-    const fetchStationNameIfNeeded = async (stopId: string): Promise<string> => {
+    const fetchStationNameIfNeeded = async (stopId: string, busRouteId?: string): Promise<string> => {
       // 이미 캐시에 있는 경우
       if (stationInfoCache.has(stopId)) {
         return stationInfoCache.get(stopId) || '';
       }
       
       try {
-        // API에서 정류장 정보 가져오기
+        // 1. 먼저 DB에서 정류장 정보 조회 시도
+        if (busRouteId) {
+          const busStop = await prisma.busStop.findFirst({
+            where: {
+              busRouteId,
+              stationId: stopId
+            },
+            select: {
+              stationName: true
+            }
+          });
+          
+          // DB에서 정보를 찾았으면 캐시에 저장하고 반환
+          if (busStop?.stationName) {
+            const stationName = busStop.stationName;
+            stationInfoCache.set(stopId, stationName);
+            return stationName;
+          }
+        }
+        
+        // 2. DB에서 찾지 못했으면 API에서 정류장 정보 가져오기
         const stationInfo = await fetchBusStationInfo(stopId);
         if (stationInfo && stationInfo.length > 0) {
           const stationName = stationInfo[0].stationName || '';
@@ -583,7 +625,7 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
           
           // 여전히 stopName이 없는 경우 API에서 가져오기
           if (!stopName && location.stopId) {
-            stopName = await fetchStationNameIfNeeded(location.stopId);
+            stopName = await fetchStationNameIfNeeded(location.stopId, location.busRouteId);
             
             // 정류장 이름을 찾았으면 DB 업데이트
             if (stopName) {
