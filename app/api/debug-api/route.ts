@@ -1,6 +1,17 @@
 import { NextResponse } from 'next/server';
 import { fetchBusRoutes, fetchBusLocationAndSeats, fetchRouteStations } from '@/lib/api/publicDataApi';
 
+// 결과 타입 정의
+interface ApiResult {
+  action: string;
+  routeId: string | null;
+  keyword: string | null;
+  result: unknown[];
+  error: string | null;
+  executionTime: string;
+  timestamp: string;
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -11,8 +22,8 @@ export async function GET(request: Request) {
     console.log(`[DEBUG API] 요청: action=${action}, routeId=${routeId}, keyword=${keyword}`);
     
     const startTime = Date.now();
-    let result = null;
-    let error = null;
+    let result: unknown[] = [];
+    let error: string | null = null;
     
     switch (action) {
       case 'routes':
@@ -65,7 +76,7 @@ export async function GET(request: Request) {
     
     const endTime = Date.now();
     
-    return NextResponse.json({
+    const apiResult: ApiResult = {
       action,
       routeId: routeId || null,
       keyword: keyword || null,
@@ -73,7 +84,9 @@ export async function GET(request: Request) {
       error,
       executionTime: `${endTime - startTime}ms`,
       timestamp: new Date().toISOString()
-    });
+    };
+    
+    return NextResponse.json(apiResult);
   } catch (error) {
     console.error('[DEBUG API] 처리 중 오류:', error);
     return NextResponse.json({ 

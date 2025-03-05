@@ -11,6 +11,11 @@ interface ApiTestResult<T> {
   time: string;
 }
 
+interface ApiErrorResponse {
+  error: string;
+  message: string;
+}
+
 // 공공 데이터 API 디버깅
 export async function GET(request: Request) {
   try {
@@ -22,9 +27,8 @@ export async function GET(request: Request) {
     
     // API 키 정보 출력
     const apiKeyInfo = {
-      encoded: process.env.PUBLIC_DATA_API_KEY ? '설정됨' : '없음',
-      decoded: process.env.PUBLIC_DATA_BUS_API_KEY_DEC ? '설정됨' : '없음',
-      encoded2: process.env.PUBLIC_DATA_BUS_API_KEY_INC ? '설정됨' : '없음',
+      basic: process.env.PUBLIC_DATA_API_KEY ? '설정됨' : '없음',
+      bus: process.env.BUS_API_KEY ? '설정됨' : '없음',
     };
     
     // 1. 버스 노선 정보 조회
@@ -49,23 +53,23 @@ export async function GET(request: Request) {
         time: `${Date.now() - startTime1}ms`,
       };
     }
-    
-    // 선택한 노선 ID
-    const routeId = routesResult.data?.[0]?.routeId.toString() || '';
-    
-    // 2. 버스 노선 정류장 정보 조회
-    let stationsResult: ApiTestResult<BusStation> = { 
-      success: false, 
-      count: 0, 
-      data: [], 
-      error: null, 
-      time: '0ms'
+
+    // 2. 버스 노선별 정류장 정보 조회
+    let stationsResult: ApiTestResult<BusStation> = {
+      success: false,
+      count: 0,
+      data: [],
+      error: '노선 정보를 찾을 수 없음',
+      time: '0ms',
     };
     
-    if (routeId) {
+    // 노선이 있는 경우에만 정류장 정보 조회
+    if (routesResult.success && routesResult.count > 0) {
+      const testRouteId = routesResult.data[0].routeId;
+      
       const startTime2 = Date.now();
       try {
-        const stations = await fetchRouteStations(routeId);
+        const stations = await fetchRouteStations(String(testRouteId));
         stationsResult = {
           success: true,
           count: stations.length,
@@ -85,19 +89,22 @@ export async function GET(request: Request) {
       }
     }
     
-    // 3. 버스 위치 및 좌석 정보 조회
-    let locationsResult: ApiTestResult<BusLocation> = { 
-      success: false, 
-      count: 0, 
-      data: [], 
-      error: null, 
-      time: '0ms'
+    // 3. 버스 위치 정보 조회
+    let locationsResult: ApiTestResult<BusLocation> = {
+      success: false,
+      count: 0,
+      data: [],
+      error: '노선 정보를 찾을 수 없음',
+      time: '0ms',
     };
     
-    if (routeId) {
+    // 노선이 있는 경우에만 버스 위치 정보 조회
+    if (routesResult.success && routesResult.count > 0) {
+      const testRouteId = routesResult.data[0].routeId;
+      
       const startTime3 = Date.now();
       try {
-        const locations = await fetchBusLocationAndSeats(routeId);
+        const locations = await fetchBusLocationAndSeats(String(testRouteId));
         locationsResult = {
           success: true,
           count: locations.length,
@@ -117,28 +124,24 @@ export async function GET(request: Request) {
       }
     }
     
-    // 결과 종합
-    const result = {
+    // 4. 결과 반환
+    return NextResponse.json({
       timestamp: new Date().toISOString(),
       apiKeys: apiKeyInfo,
       searchQuery: route,
-      selectedRouteId: routeId,
+      selectedRouteId: routesResult.success && routesResult.count > 0 
+        ? String(routesResult.data[0].routeId) 
+        : null,
       busRoutes: routesResult,
       busStations: stationsResult,
       busLocations: locationsResult,
-    };
-    
-    return NextResponse.json(result);
+    });
   } catch (error) {
-    console.error('[API 디버그 에러]', error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    
-    return NextResponse.json(
-      { 
-        error: '공공 데이터 API 테스트 중 오류가 발생했습니다.',
-        message: errorMessage
-      },
-      { status: 500 }
-    );
+    console.error('API 디버깅 오류:', error);
+    const errorResponse: ApiErrorResponse = { 
+      error: '디버깅 중 오류가 발생했습니다', 
+      message: error instanceof Error ? error.message : String(error)
+    };
+    return NextResponse.json(errorResponse, { status: 500 });
   }
 } 

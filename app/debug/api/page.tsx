@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface DebugResult {
   action: string;
   routeId: string | null;
   keyword: string | null;
-  result: any[];
+  result: unknown[];
   error: string | null;
   executionTime: string;
   timestamp: string;
@@ -37,6 +37,10 @@ export default function ApiDebugPage() {
       
       // API 호출
       const response = await fetch(`/api/debug-api?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`API 오류: ${response.status} ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       console.log('API 응답:', data);
@@ -55,11 +59,13 @@ export default function ApiDebugPage() {
       
       <div className="mb-6 p-4 border rounded bg-gray-50">
         <div className="mb-4">
-          <label className="block mb-2">테스트할 API:</label>
+          <label htmlFor="api-action" className="block mb-2">테스트할 API:</label>
           <select
+            id="api-action"
             className="w-full p-2 border rounded"
             value={action}
             onChange={(e) => setAction(e.target.value)}
+            aria-label="테스트할 API 선택"
           >
             <option value="routes">버스 노선 정보 조회</option>
             <option value="locations">버스 위치 및 좌석 정보 조회</option>
@@ -69,8 +75,9 @@ export default function ApiDebugPage() {
         
         {action === 'routes' ? (
           <div className="mb-4">
-            <label className="block mb-2">버스 번호:</label>
+            <label htmlFor="bus-keyword" className="block mb-2">버스 번호:</label>
             <input
+              id="bus-keyword"
               type="text"
               className="w-full p-2 border rounded"
               value={keyword}
@@ -80,8 +87,9 @@ export default function ApiDebugPage() {
           </div>
         ) : (
           <div className="mb-4">
-            <label className="block mb-2">노선 ID:</label>
+            <label htmlFor="route-id" className="block mb-2">노선 ID:</label>
             <input
+              id="route-id"
               type="text"
               className="w-full p-2 border rounded"
               value={routeId}
@@ -92,7 +100,7 @@ export default function ApiDebugPage() {
         )}
         
         <button
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+          className="w-full p-2 bg-blue-500 text-white rounded hover:bg-blue-600"
           onClick={handleTest}
           disabled={loading}
         >
@@ -100,32 +108,66 @@ export default function ApiDebugPage() {
         </button>
       </div>
       
+      {loading && (
+        <div className="text-center p-4">
+          <div className="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-blue-600 rounded-full"></div>
+          <p className="mt-2">API 요청 처리 중...</p>
+        </div>
+      )}
+      
       {error && (
-        <div className="mb-6 p-4 border rounded bg-red-50 text-red-800">
-          <h2 className="font-bold mb-2">오류 발생</h2>
+        <div className="mb-6 p-4 border border-red-300 bg-red-50 text-red-800 rounded">
+          <h2 className="text-lg font-semibold mb-2">오류 발생</h2>
           <p>{error}</p>
         </div>
       )}
       
-      {result && (
-        <div className="mb-6">
-          <h2 className="text-xl font-bold mb-2">API 결과</h2>
+      {result && !loading && (
+        <div className="border rounded bg-white p-4 shadow-sm">
+          <h2 className="text-lg font-semibold mb-4">API 응답 결과</h2>
           
-          <div className="mb-4 p-4 border rounded bg-gray-50">
-            <p><strong>액션:</strong> {result.action}</p>
-            <p><strong>실행 시간:</strong> {result.executionTime}</p>
-            <p><strong>타임스탬프:</strong> {result.timestamp}</p>
-            {result.error && (
-              <p className="text-red-500"><strong>오류:</strong> {result.error}</p>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <p className="text-sm text-gray-500">액션</p>
+              <p className="font-medium">{result.action}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">실행 시간</p>
+              <p className="font-medium">{result.executionTime}</p>
+            </div>
+            {result.routeId && (
+              <div>
+                <p className="text-sm text-gray-500">노선 ID</p>
+                <p className="font-medium">{result.routeId}</p>
+              </div>
+            )}
+            {result.keyword && (
+              <div>
+                <p className="text-sm text-gray-500">검색어</p>
+                <p className="font-medium">{result.keyword}</p>
+              </div>
             )}
           </div>
           
-          <div className="mb-4">
-            <h3 className="text-lg font-bold mb-2">결과 데이터 ({result.result?.length || 0}개 항목)</h3>
-            <pre className="p-4 border rounded bg-gray-100 overflow-auto max-h-96">
-              {JSON.stringify(result.result, null, 2)}
-            </pre>
-          </div>
+          {result.error ? (
+            <div className="mb-4 p-4 border border-red-300 bg-red-50 text-red-800 rounded">
+              <p className="font-semibold">API 오류:</p>
+              <p>{result.error}</p>
+            </div>
+          ) : (
+            <div>
+              <h3 className="text-md font-semibold mt-4 mb-2">데이터 ({result.result?.length || 0}개 항목)</h3>
+              <div className="overflow-x-auto">
+                <pre className="bg-gray-50 p-4 rounded text-sm">
+                  {JSON.stringify(result.result, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
+          
+          <p className="text-xs text-gray-500 mt-4">
+            요청 시간: {new Date(result.timestamp).toLocaleString()}
+          </p>
         </div>
       )}
       

@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
 // API 키 디버깅용 테스트 함수
 export async function testApiKey() {
@@ -14,7 +14,7 @@ export async function testApiKey() {
   console.log('Encoded:', keys.encoded);
   
   // 각 키로 테스트 시도
-  const results = {};
+  const results: Record<string, unknown> = {};
   
   for (const [type, key] of Object.entries(keys)) {
     if (!key) continue;
@@ -45,10 +45,11 @@ export async function testApiKey() {
         };
       }
     } catch (error) {
+      const axiosError = error as AxiosError;
       results[type] = {
         status: 'EXCEPTION',
-        message: error.message,
-        response: error.response?.data,
+        message: axiosError.message,
+        response: axiosError.response?.data,
       };
     }
   }
@@ -60,12 +61,12 @@ export async function testApiKey() {
 }
 
 // API 파라미터 테스트
-export async function testApiParams(apiType: string, params: Record<string, any>) {
+export async function testApiParams(apiType: string, params: Record<string, string | number | boolean>) {
   const key = process.env.PUBLIC_DATA_BUS_API_KEY_DEC; // DEC 버전 키 사용
   const keyEnc = process.env.PUBLIC_DATA_BUS_API_KEY_INC; // INC 버전 키 사용
   
   // API 엔드포인트 맵
-  const endpoints = {
+  const endpoints: Record<string, string> = {
     routes: 'http://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteListv2',
     routeInfo: 'http://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteInfoItemv2',
     stations: 'http://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteStationListv2',
@@ -112,11 +113,12 @@ export async function testApiParams(apiType: string, params: Record<string, any>
       message: '모든 API 키 시도 실패'
     };
   } catch (error) {
-    console.error('API 테스트 예외 발생:', error.message);
+    const axiosError = error as AxiosError;
+    console.error('API 테스트 예외 발생:', axiosError.message);
     return {
       success: false,
-      error: error.message,
-      response: error.response?.data
+      error: axiosError.message,
+      response: axiosError.response?.data
     };
   }
 } 
