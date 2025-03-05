@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
 import { prisma } from '@/lib/prisma/client';
-import { fetchBusBaseInfo, fetchBusLocationAndSeats, fetchRouteDetail, fetchBusStationInfo } from './publicDataApi';
+import { fetchBusBaseInfo, fetchBusLocationAndSeats, fetchRouteDetail, fetchBusStationInfo, fetchRouteStations } from './publicDataApi';
 import { BusLocation } from './types';
 import { logger } from '@/lib/logging';
 
@@ -123,6 +123,53 @@ export async function collectAllSeatBusRoutes(): Promise<void> {
             data: routeData
           });
           createdCount++;
+        }
+        
+        // busStop 정보 업데이트: 정류장 정보가 없거나 최소한만 있으면 정보 가져오기
+        const stopsCount = await prisma.busStop.count({
+          where: { busRouteId: routeData.id }
+        });
+        
+        if (stopsCount < 3) { // 시작, 끝, 회차 정류장 등 최소 정보만 있는 경우 또는 없는 경우
+          try {
+            logger.info(`노선 ${routeData.id}의 정류장 정보 가져오기 시작...`);
+            const stops = await fetchRouteStations(routeData.id);
+            
+            if (stops.length > 0) {
+              // 기존 정류장 정보 삭제 (새로 갱신)
+              if (stopsCount > 0) {
+                await prisma.busStop.deleteMany({
+                  where: { busRouteId: routeData.id }
+                });
+              }
+              
+              // 정류장 정보 DB에 저장
+              let savedCount = 0;
+              for (const stop of stops) {
+                try {
+                  await prisma.busStop.create({
+                    data: {
+                      busRouteId: routeData.id,
+                      stationId: String(stop.stationId),
+                      stationName: stop.stationName,
+                      stationSeq: stop.stationSeq,
+                      x: stop.x,
+                      y: stop.y,
+                    },
+                  });
+                  savedCount++;
+                } catch (error) {
+                  // 중복 오류 등은 무시
+                  if (!(error instanceof Error && error.message.includes('Unique constraint'))) {
+                    logger.error(`정류장 저장 중 오류 발생 (노선 ${routeData.id}, 정류장 ${stop.stationId}):`, error);
+                  }
+                }
+              }
+              logger.info(`노선 ${routeData.id}의 정류장 ${savedCount}/${stops.length}개를 DB에 저장했습니다.`);
+            }
+          } catch (error) {
+            logger.error(`노선 ${routeData.id}의 정류장 정보 조회 실패:`, error);
+          }
         }
       } catch (error) {
         logger.error(`버스 노선 저장 오류 (ID: ${route.routeId}):`, error);
@@ -423,6 +470,47 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
   // 각 노선에 대해 버스 위치 및 잔여석 정보 조회
   for (const routeId of routeIds) {
     try {
+      // 버스 정류장 정보가 DB에 있는지 확인
+      const existingStopsCount = await prisma.busStop.count({
+        where: { busRouteId: routeId }
+      });
+      
+      // 정류장 정보가 없으면 API에서 가져와 DB에 저장
+      if (existingStopsCount === 0) {
+        logger.info(`노선 ${routeId}의 정류장 정보가 없습니다. API에서 정보를 가져옵니다.`);
+        try {
+          const stops = await fetchRouteStations(routeId);
+          
+          if (stops.length > 0) {
+            // 정류장 정보 DB에 저장
+            await Promise.all(
+              stops.map(async (stop) => {
+                try {
+                  await prisma.busStop.create({
+                    data: {
+                      busRouteId: routeId,
+                      stationId: String(stop.stationId),
+                      stationName: stop.stationName,
+                      stationSeq: stop.stationSeq,
+                      x: stop.x,
+                      y: stop.y,
+                    },
+                  });
+                } catch (error) {
+                  // 이미 존재하는 경우 등의 오류는 무시
+                  if (!(error instanceof Error && error.message.includes('Unique constraint'))) {
+                    logger.error(`정류장 저장 중 오류 발생 (노선 ${routeId}, 정류장 ${stop.stationId}):`, error);
+                  }
+                }
+              })
+            );
+            logger.info(`노선 ${routeId}의 정류장 ${stops.length}개를 DB에 저장했습니다.`);
+          }
+        } catch (error) {
+          logger.error(`노선 ${routeId}의 정류장 정보 조회 실패:`, error);
+        }
+      }
+      
       apiCallCount++; // API 호출 카운트
       const busLocations = await fetchBusLocationAndSeats(routeId);
 
