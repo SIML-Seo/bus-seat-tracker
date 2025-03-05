@@ -1,0 +1,95 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["extendedWhereUnique"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  relationMode = "foreignKeys"
+}
+
+// 버스 노선 정보
+model BusRoute {
+  id               String          @id
+  routeName        String         // 노선명 (예: 1234번)
+  type             String         // 노선 유형 코드 (11, 12 등)
+  routeTypeName    String?        // 노선 유형 이름 (시내, 시외, 광역 등)
+  startStopName    String         // 기점 정류장
+  endStopName      String         // 종점 정류장
+  turnStationName  String?        // 회차 정류장 이름
+  turnStationId    String?        // 회차 정류장 ID
+  company          String?        // 운수회사
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  
+  // 관계
+  busLocations     BusLocation[]
+  busStopSeats     BusStopSeats[]
+  busStops         BusStop[]      // 노선에 속한 정류장 목록 (추가)
+}
+
+// 버스 정류장 정보
+model BusStop {
+  id               String         @default(uuid())
+  busRouteId       String         // 버스 노선 ID
+  stationId        String         // 정류장 ID
+  stationName      String         // 정류장 이름
+  stationSeq       Int            // 정류장 순서
+  x                Float?         // 경도
+  y                Float?         // 위도
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  
+  // 관계
+  busRoute         BusRoute       @relation(fields: [busRouteId], references: [id])
+  
+  // 유니크 제약조건 (노선+정류장 ID 조합은 유일)
+  @@id([busRouteId, stationId])
+  @@index([busRouteId])
+  @@index([stationId])
+}
+
+// 버스 위치 정보 (2분 간격으로 수집)
+model BusLocation {
+  id               String         @id @default(uuid())
+  busRouteId       String         // 버스 노선 ID
+  busId            String         // 버스 ID
+  stopId           String?        // 현재/다음 정류장 ID
+  stopName         String?        // 현재/다음 정류장 이름
+  remainingSeats   Int            // 잔여 좌석 수
+  updatedAt        DateTime       @default(now())
+  
+  // 관계
+  busRoute         BusRoute       @relation(fields: [busRouteId], references: [id])
+  
+  @@index([busRouteId])
+  @@index([updatedAt])
+}
+
+// 정류장별 잔여석 통계
+model BusStopSeats {
+  id               String         @id @default(uuid())
+  busRouteId       String         // 버스 노선 ID
+  stopId           String         // 정류장 ID
+  stopName         String         // 정류장 이름
+  averageSeats     Float          // 평균 잔여석
+  dayOfWeek        Int            // 요일 (0=일요일, 6=토요일)
+  hourOfDay        Int            // 시간대 (0-23)
+  samplesCount     Int            // 샘플 수
+  updatedAt        DateTime       @updatedAt
+  
+  // 관계
+  busRoute         BusRoute       @relation(fields: [busRouteId], references: [id])
+  
+  @@unique([busRouteId, stopId, dayOfWeek, hourOfDay])
+  @@index([busRouteId])
+  @@index([stopId])
+}
