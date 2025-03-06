@@ -1,0 +1,9 @@
+# *
+User-agent: *
+Allow: /
+
+# Host
+Host: https://busseatstracker.vercel.app
+
+# Sitemaps
+Sitemap: https://busseatstracker.vercel.app/sitemap.xml
