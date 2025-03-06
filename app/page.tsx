@@ -63,12 +63,12 @@ export default function Home() {
         <div className="mb-10 bg-white p-6 rounded-lg shadow-md">
           <div className="flex flex-col sm:flex-row gap-3">
             <input
-              type="text"
+              type="number"
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="버스 번호를 입력하세요 (예: 1234)"
-              className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
             />
             <button
               onClick={handleSearch}

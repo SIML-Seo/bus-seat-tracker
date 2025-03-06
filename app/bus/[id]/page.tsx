@@ -44,6 +44,8 @@ const fetcher = (url: string) => fetch(url).then(res => res.json());
 // 요일 매핑
 const DAY_OF_WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
+const USE_WEEKDAY_BY_DEFAULT = true;
+
 // 필터 타입 정의
 type FilterPreset = 'all' | 'weekday' | 'weekend';
 
@@ -60,9 +62,16 @@ export default function BusDetail() {
   
   // 현재 날짜/시간 기반 기본값 설정
   useEffect(() => {
-    const now = new Date();
-    // 현재 요일을 기본값으로 설정
-    setSelectedDays([now.getDay()]);
+    if (!USE_WEEKDAY_BY_DEFAULT) {
+      const now = new Date();
+      // 현재 요일을 기본값으로 설정
+      setSelectedDays([now.getDay()]);
+    } else {
+      // 평일(월~금)을 기본값으로 설정
+      setSelectedDays([1, 2, 3, 4, 5]);
+      // 평일 프리셋 활성화
+      setActivePreset('weekday');
+    }
     // 시간은 선택하지 않음 (모든 시간 표시)
     setSelectedHour(null);
   }, []);
@@ -322,7 +331,7 @@ export default function BusDetail() {
   // 필터 섹션
   const renderFilterSection = () => (
     <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-      <h2 className="text-lg font-semibold mb-4">데이터 필터</h2>
+      <h2 className="text-lg font-semibold mb-4 text-black">데이터 필터</h2>
       
       {/* 필터 프리셋 버튼 */}
       <div className="mb-5">
@@ -482,7 +491,7 @@ export default function BusDetail() {
         {viewMode === 'stations' ? (
           /* 정류장 목록 - 노선도 스타일 */
           <div className="bg-white rounded-lg shadow-md overflow-hidden p-6">
-            <h2 className="text-lg font-semibold mb-6 border-b pb-2">노선도</h2>
+            <h2 className="text-lg font-semibold mb-6 border-b pb-2 text-black">노선도</h2>
             
             {busStops.length === 0 ? (
               <div className="p-6 text-center text-gray-600">
@@ -617,7 +626,7 @@ export default function BusDetail() {
             
             {/* 좌석 데이터 표시 */}
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
-              <h2 className="text-lg font-semibold p-6 border-b">
+              <h2 className="text-lg font-semibold p-6 border-b text-black">
                 {selectedStation 
                   ? `${busStops.find((s: BusStop) => s.stationId === selectedStation)?.stationName || '선택된 정류장'} 주간 시간대별 잔여석` 
                   : '정류장별 평균 잔여석'}
