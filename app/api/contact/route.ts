@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma/client';
+import { sendContactNotification } from '@/lib/slack/notifications';
 
 // 간단한 이메일 유효성 검사 함수
 function isValidEmail(email: string): boolean {
@@ -37,6 +38,9 @@ export async function POST(req: NextRequest) {
     });
     
     console.log('새 문의가 접수되었습니다:', { name, email });
+    
+    // 슬랙으로 알림 전송
+    await sendContactNotification(contact);
     
     return NextResponse.json({ 
       success: true, 
