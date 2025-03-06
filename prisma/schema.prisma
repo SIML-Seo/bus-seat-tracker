@@ -93,3 +93,15 @@ model BusStopSeats {
   @@index([busRouteId])
   @@index([stopId])
 }
+
+// 문의 정보
+model Contact {
+  id               String         @id @default(uuid())
+  name             String         // 이름
+  email            String         // 이메일
+  message          String         // 메시지
+  read             Boolean        @default(false) // 읽음 여부
+  createdAt        DateTime       @default(now()) // 생성일
+  
+  @@index([createdAt])
+}
