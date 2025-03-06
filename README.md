@@ -23,6 +23,14 @@
 ### 데이터 수집
 - 공공데이터포털 API
 
+## 문서
+
+프로젝트 설정 및 사용 가이드는 [docs](./docs) 폴더에서 확인할 수 있습니다:
+
+- [Supabase 설정 가이드](./docs/SUPABASE_SETUP.md)
+- [Cron 작업 설정 가이드](./docs/CRON_SETUP.md)
+- [Slack 알림 설정 가이드](./docs/SLACK_SETUP.md)
+
 ## 설치 방법
 
 ### 필수 요구사항
