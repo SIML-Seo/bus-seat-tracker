@@ -69,13 +69,11 @@ export default function BusDetail() {
     } else {
       // 평일(월~금)을 기본값으로 설정
       setSelectedDays([1, 2, 3, 4, 5]);
-      // 평일 프리셋 활성화
-      setActivePreset('weekday');
     }
     // 시간은 선택하지 않음 (모든 시간 표시)
     setSelectedHour(null);
   }, []);
-  
+
   // 버스 정류장 목록 가져오기
   const { data: stopsData, error: stopsError, isLoading: stopsLoading } = useSWR(
     busId ? `/api/buses/${busId}/stops` : null,
@@ -410,7 +408,7 @@ export default function BusDetail() {
               setSelectedHour(e.target.value ? parseInt(e.target.value) : null);
               handleFilterChange();
             }}
-            className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-black"
           >
             <option value="">모든 시간</option>
             {hourOptions.map((hour) => (
