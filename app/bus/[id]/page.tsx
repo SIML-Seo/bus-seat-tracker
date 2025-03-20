@@ -642,9 +642,9 @@ export default function BusDetail() {
                     <table className="min-w-full border-collapse">
                       <thead>
                         <tr>
-                          <th className="p-2 border bg-gray-50">요일 / 시간</th>
+                          <th className="p-2 border bg-gray-50 w-20">요일 / 시간</th>
                           {hourOptions.map(hour => (
-                            <th key={hour} className="p-2 border bg-gray-50 text-xs whitespace-nowrap">
+                            <th key={hour} className="p-2 border bg-gray-50 text-xs whitespace-nowrap w-24 text-center" style={{ minWidth: '75px' }}>
                               {hour}시~{(hour + 1) % 24}시
                             </th>
                           ))}
@@ -669,14 +669,17 @@ export default function BusDetail() {
                                 const samples = hourData?.samplesCount || 0;
                                 
                                 return (
-                                  <td key={hour} className={`p-2 border text-center ${samples > 0 ? getSeatBgColorClass(seats) : 'bg-gray-100'}`}>
+                                  <td key={hour} className={`p-2 border text-center w-24 ${samples > 0 ? getSeatBgColorClass(seats) : 'bg-gray-100'}`}>
                                     {samples > 0 ? (
                                       <div>
                                         <div className="font-semibold">{!isNaN(seats) ? `${Math.round(seats * 10) / 10}석` : '데이터 없음'}</div>
                                         <div className="text-xs text-gray-600">{samples}회</div>
                                       </div>
                                     ) : (
-                                      <span className="text-xs text-gray-400">데이터 없음</span>
+                                      <span className="text-xs text-gray-400 flex flex-col">
+                                        <span>데이터</span>
+                                        <span>없음</span>
+                                      </span>
                                     )}
                                   </td>
                                 );
