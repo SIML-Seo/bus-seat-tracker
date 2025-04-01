@@ -32,7 +32,7 @@ export default function Home() {
   const router = useRouter();
   
   // 개발자 이메일 정보
-  const DEVELOPER_EMAIL = 'swh1182@gmail.com';
+  const DEVELOPER_EMAIL = 'galdor308@gmail.com';
   
   // 버스 노선 검색 결과
   const { data, error: swrError, isLoading } = useSWR(
