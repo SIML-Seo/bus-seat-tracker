@@ -458,7 +458,7 @@ export default function BusDetail() {
           <div className="mt-2 text-gray-600">
             <p>{busRoute.startStopName} → {busRoute.endStopName}</p>
             <p className="mt-1">노선 유형: {busRoute.routeTypeName || busRoute.type || '일반'}</p>
-            {busRoute.company && <p className="mt-1">운수회사: {busRoute.company}</p>}
+            {busRoute.company && <p className="mt-1">운수 회사: {busRoute.company}</p>}
           </div>
         </div>
         
