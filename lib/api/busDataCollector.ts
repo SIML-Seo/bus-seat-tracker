@@ -956,15 +956,22 @@ async function cleanupOldBusLocationData(): Promise<void> {
         .slice(0, Math.floor(mediumAgedRecords.length * 0.8)) // 80% 선택
         .map(record => record.id);
       
-      const samplingResult = await prisma.busLocation.deleteMany({
-        where: {
-          id: {
-            in: recordsToDelete
+      // ID 목록을 1000개씩 묶어서 처리
+      const batchSize = 1000;
+      let totalDeletedCount = 0;
+      for (let i = 0; i < recordsToDelete.length; i += batchSize) {
+        const batch = recordsToDelete.slice(i, i + batchSize);
+        const samplingResult = await prisma.busLocation.deleteMany({
+          where: {
+            id: {
+              in: batch
+            }
           }
-        }
-      });
+        });
+        totalDeletedCount += samplingResult.count;
+      }
       
-      logger.info(`12~24시간 데이터 샘플링 완료: ${samplingResult.count}개 삭제 (전체 ${mediumAgedRecords.length}개 중 80%)`);
+      logger.info(`12~24시간 데이터 샘플링 완료: ${totalDeletedCount}개 삭제 (전체 ${mediumAgedRecords.length}개 중 80%)`);
     }
     
     // 전체 데이터 카운트 로깅
