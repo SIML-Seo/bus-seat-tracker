@@ -8,7 +8,9 @@ import {
   BusRouteInfo,
   BusArrival,
   BusBaseInfo,
-  BusStationInfo
+  BusStationInfo,
+  HolidayItem,
+  HolidayApiResponse
 } from './types';
 
 // 공공데이터포털 API 기본 설정
@@ -30,6 +32,8 @@ const API_ENDPOINTS = {
   BUS_ARRIVAL: '/busarrivalservice/v2/getBusArrivalItemv2', // 버스 도착 목록 정보
   BUS_BASE_INFO: '/baseinfoservice/v2/getBaseInfoItemv2', // 버스 기본 정보
 };
+
+const HOLLYDAY_INFO_ENDPOINT = 'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo';
 
 // 좌석버스 타입코드 (잔여석 정보를 제공하는 버스 유형)
 const SEAT_BUS_TYPE_CODES = [11, 12, 14, 16, 17, 21, 22]; // 좌석버스 타입 코드
@@ -339,3 +343,49 @@ export async function fetchBusStationInfo(stationId: string): Promise<BusStation
     return [];
   }
 }
+
+// 7. 공휴일 정보 조회
+export async function fetchHollydayInfo(year: number, month: number): Promise<HolidayItem[]> {
+  try {
+    const params = {
+      serviceKey: PUBLIC_DATA_API_KEY, // 기존 API 키 사용
+      solYear: year,
+      solMonth: String(month).padStart(2, '0'), // 월을 2자리로 (예: 9 -> '09')
+      _type: 'json', // JSON 형식으로 응답 요청
+    };
+
+    console.log('[DEBUG] 공휴일 API 호출 파라미터:', params);
+
+    const response = await axios.get<HolidayApiResponse>(HOLLYDAY_INFO_ENDPOINT, {
+      params,
+      timeout: 10000, // 10초 타임아웃
+    });
+
+    console.log('[DEBUG] 공휴일 API 응답 상태:', response.status);
+    console.log('[DEBUG] 공휴일 API 응답 데이터:', JSON.stringify(response.data, null, 2));
+
+    // 응답 코드 확인
+    if (response.data?.response?.header?.resultCode === '00') {
+      const items = response.data.response.body?.items?.item;
+      if (items) {
+        // item이 단일 객체일 경우 배열로 변환
+        return Array.isArray(items) ? items : [items];
+      }
+      console.log('[DEBUG] 공휴일 정보 items 없음');
+      return []; // 아이템 없으면 빈 배열 반환
+    } else {
+      console.error('공휴일 정보 조회 API 오류:', response.data?.response?.header?.resultMsg || '알 수 없는 오류');
+      return []; // API 오류 시 빈 배열 반환
+    }
+  } catch (error) {
+    console.error('공휴일 정보 API 호출 중 예외 발생:', error);
+    // Axios 에러 상세 로깅
+    if (axios.isAxiosError(error)) {
+      console.error(`[상세 에러 정보] 상태 코드: ${error.response?.status}`);
+      console.error(`[상세 에러 정보] 에러 메시지: ${error.message}`);
+      console.error(`[상세 에러 정보] 응답 데이터:`, error.response?.data);
+    }
+    return []; // 예외 발생 시 빈 배열 반환
+  }
+}
+

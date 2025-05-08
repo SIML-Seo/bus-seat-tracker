@@ -1,8 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
 import { prisma } from '@/lib/prisma/client';
-import { fetchBusBaseInfo, fetchBusLocationAndSeats, fetchRouteDetail, fetchBusStationInfo, fetchRouteStations } from './publicDataApi';
-import { BusLocation } from './types';
+import { 
+  fetchBusBaseInfo, 
+  fetchBusLocationAndSeats, 
+  fetchRouteDetail, 
+  fetchBusStationInfo, 
+  fetchRouteStations, 
+  fetchHollydayInfo
+} from './publicDataApi';
+import { BusLocation, HolidayItem } from './types';
 import { logger } from '@/lib/logging';
 
 // 좌석버스 타입코드 (잔여석 정보를 제공하는 버스 유형)
@@ -750,6 +757,30 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
   }
 }
 
+// 월별 공휴일 정보 캐시
+let currentMonthHolidays: HolidayItem[] = [];
+let lastHolidayFetchDate = ''; // 마지막으로 공휴일 정보를 가져온 날짜 (YYYY-MM-DD)
+
+async function updateHolidayInfo(now: Date): Promise<void> {
+  const currentDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  
+  // 날짜가 바뀌었으면 공휴일 정보 업데이트
+  if (currentDateStr !== lastHolidayFetchDate) {
+    logger.info(`날짜 변경 (${currentDateStr}), ${now.getFullYear()}년 ${now.getMonth() + 1}월 공휴일 정보 업데이트 시도...`);
+    try {
+      const holidays = await fetchHollydayInfo(now.getFullYear(), now.getMonth() + 1);
+      currentMonthHolidays = holidays;
+      lastHolidayFetchDate = currentDateStr;
+      logger.info(`공휴일 정보 업데이트 완료: ${holidays.length}개`);
+      if (holidays.length > 0) {
+        logger.info(`이번 달 공휴일: ${holidays.map(h => `${h.locdate}(${h.dateName})`).join(', ')}`);
+      }
+    } catch (error) {
+      logger.error('공휴일 정보 업데이트 중 오류 발생:', error);
+    }
+  }
+}
+
 // 최적화된 데이터 수집 메인 함수
 export async function startOptimizedDataCollection(): Promise<void> {
   logger.info('최적화된 버스 데이터 수집 서비스 시작...');
@@ -797,7 +828,7 @@ export async function startOptimizedDataCollection(): Promise<void> {
     const hour = now.getHours();
     const dayOfWeek = now.getDay();
     
-    // 날짜가 바뀌었는지 확인하여 API 호출 카운트 초기화
+    // 날짜가 바뀌었는지 확인하여 API 호출 카운트 초기화 및 공휴일 정보 업데이트
     const currentDateString = now.toDateString();
     if (currentDateString !== lastResetDate) {
       logger.info(`날짜가 변경되어 API 호출 카운트 초기화. 이전: ${dailyApiCallCount}`);
@@ -808,8 +839,20 @@ export async function startOptimizedDataCollection(): Promise<void> {
       const cacheSize = lastBusPositionCache.size;
       lastBusPositionCache.clear();
       logger.info(`날짜 변경으로 버스 위치 캐시 초기화: ${cacheSize}개 항목 제거`);
+
+      // 공휴일 정보 업데이트
+      await updateHolidayInfo(now);
     }
     
+    // 오늘이 공휴일인지 확인
+    const todayYYYYMMDD = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const isTodayHoliday = currentMonthHolidays.some(holiday => holiday.locdate.toString() === todayYYYYMMDD && holiday.isHoliday === 'Y');
+    
+    if (isTodayHoliday) {
+      logger.info(`오늘은 공휴일(${currentMonthHolidays.find(h => h.locdate.toString() === todayYYYYMMDD)?.dateName || '정보 없음'})입니다.`);
+      return;
+    }
+
     // 운영 시간 외에는 체크하지 않음
     if (hour < 6 || hour >= 22) {
       return;

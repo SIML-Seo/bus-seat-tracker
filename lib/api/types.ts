@@ -250,3 +250,32 @@ export interface BusStationInfo {
   x: number; //	숫자형	정류소 X좌표
   y: number; //	숫자형	정류소 Y좌표
 }
+
+export interface HolidayItem {
+  dateKind: string; // 종류
+  dateName: string; // 공휴일 명칭
+  isHoliday: 'Y' | 'N'; // 공공기관 휴일여부
+  locdate: string; // 날짜 YYYYMMDD
+  seq: number; // 순번
+}
+
+export interface HolidayResponseHeader {
+  resultCode: string;
+  resultMsg: string;
+}
+
+export interface HolidayResponseBody {
+  items: {
+    item: HolidayItem[];
+  };
+  numOfRows: number;
+  pageNo: number;
+  totalCount: number;
+}
+
+export interface HolidayApiResponse {
+  response: {
+    header: HolidayResponseHeader;
+    body: HolidayResponseBody;
+  };
+}
