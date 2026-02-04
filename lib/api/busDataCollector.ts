@@ -790,17 +790,29 @@ export async function startOptimizedDataCollection(): Promise<void> {
   logger.info('- 매 평일 하나의 집중 그룹만 수집 (5주 주기 순환)');
   logger.info('- 오래된 데이터 자동 정리: 6시간 간격, 7일 이상 데이터 삭제');
 
-  // 모든 좌석버스 정보 수집 (처음 한 번만)
-  // await collectAllSeatBusRoutes();
-  
+  // 시작 시 공휴일 정보 로딩 (버그 수정: 스크립트 시작 시 공휴일 확인)
+  await updateHolidayInfo(new Date());
+
   // DB에서 모든 좌석버스 노선 가져오기
-  const busRoutes = await prisma.busRoute.findMany({
+  let busRoutes = await prisma.busRoute.findMany({
     select: { id: true }
   });
-  
+
+  // 노선 데이터가 없으면 자동으로 수집 (전체 초기화 후 첫 실행 시)
   if (busRoutes.length === 0) {
-    logger.error('저장된 버스 노선이 없습니다.');
-    return;
+    logger.info('저장된 버스 노선이 없습니다. 노선 정보를 수집합니다...');
+    await collectAllSeatBusRoutes();
+
+    // 수집 후 다시 조회
+    busRoutes = await prisma.busRoute.findMany({
+      select: { id: true }
+    });
+
+    if (busRoutes.length === 0) {
+      logger.error('노선 정보 수집에 실패했습니다. 스크립트를 종료합니다.');
+      return;
+    }
+    logger.info(`${busRoutes.length}개 노선 정보 수집 완료.`);
   }
   
   // 노선 그룹화

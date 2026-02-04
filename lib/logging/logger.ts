@@ -69,9 +69,29 @@ export class LogManager {
     return `${formatted.year}-${formatted.month}-${formatted.day} ${formatted.hour}:${formatted.minute}:${formatted.second}`;
   }
   
-  // 로그 추가
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async log(message: string, ...args: any[]): Promise<void> {
+  // 공통 메시지 포맷팅 함수
+  private formatMessage(message: string, args: unknown[]): string {
+    if (args.length === 0) return message;
+    
+    return args.reduce<string>((msg, arg) => {
+      // 에러 객체 처리
+      if (arg instanceof Error) {
+        return `${msg} ${arg.message}\n${arg.stack}`;
+      }
+      // 객체 처리
+      if (typeof arg === 'object' && arg !== null) {
+        try {
+          return `${msg} ${JSON.stringify(arg)}`;
+        } catch {
+          return `${msg} [Object]`;
+        }
+      }
+      return `${msg} ${arg}`;
+    }, message);
+  }
+  
+  // 공통 로그 처리 함수
+  private async writeLog(level: LogLevel, message: string, args: unknown[]): Promise<void> {
     // 날짜가 바뀌었는지 확인
     const currentDate = this.getFormattedDate();
     if (currentDate !== this.currentDate) {
@@ -80,69 +100,15 @@ export class LogManager {
       this.logFileName = `log_${this.currentDate}.txt`;
     }
     
-    // 추가 인자가 있으면 결합
-    let combinedMessage = message;
-    if (args.length > 0) {
-      combinedMessage = args.reduce((msg, arg) => {
-        // 에러 객체 처리
-        if (arg instanceof Error) {
-          return `${msg} ${arg.message}\n${arg.stack}`;
-        }
-        // 객체 처리
-        else if (typeof arg === 'object' && arg !== null) {
-          try {
-            return `${msg} ${JSON.stringify(arg)}`;
-          } catch {
-            return `${msg} [Object]`;
-          }
-        }
-        return `${msg} ${arg}`;
-      }, message);
-    }
-    
-    // 로그 메시지 포맷팅
-    const formattedMessage = `[${this.getTimestamp()}] [INFO] ${combinedMessage}`;
-    
-    // 콘솔에 출력 (기존 console.log 대체)
-    console.log(formattedMessage);
-    
-    // 버퍼에 추가
-    this.logBuffer.push(formattedMessage);
-    
-    // 버퍼 크기가 최대치에 도달하면 저장
-    if (this.logBuffer.length >= this.maxBufferSize) {
-      await this.flushLogs();
-    }
-  }
-  
-  // 편의 메서드들
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async debug(message: string, ...args: any[]): Promise<void> {
-    // 추가 인자가 있으면 결합
-    let combinedMessage = message;
-    if (args.length > 0) {
-      combinedMessage = args.reduce((msg, arg) => {
-        // 에러 객체 처리
-        if (arg instanceof Error) {
-          return `${msg} ${arg.message}\n${arg.stack}`;
-        }
-        // 객체 처리
-        else if (typeof arg === 'object' && arg !== null) {
-          try {
-            return `${msg} ${JSON.stringify(arg)}`;
-          } catch {
-            return `${msg} [Object]`;
-          }
-        }
-        return `${msg} ${arg}`;
-      }, message);
-    }
-    
-    // 로그 메시지 포맷팅
-    const formattedMessage = `[${this.getTimestamp()}] [DEBUG] ${combinedMessage}`;
+    const combinedMessage = this.formatMessage(message, args);
+    const formattedMessage = `[${this.getTimestamp()}] [${level.toUpperCase()}] ${combinedMessage}`;
     
     // 콘솔에 출력
-    console.debug(formattedMessage);
+    const consoleMethod = level === 'debug' ? console.debug :
+                         level === 'warn' ? console.warn :
+                         level === 'error' ? console.error :
+                         console.log;
+    consoleMethod(formattedMessage);
     
     // 버퍼에 추가
     this.logBuffer.push(formattedMessage);
@@ -153,83 +119,25 @@ export class LogManager {
     }
   }
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async info(message: string, ...args: any[]): Promise<void> {
-    return this.log(message, ...args);
+  // 로그 메서드들
+  async log(message: string, ...args: unknown[]): Promise<void> {
+    return this.writeLog('info', message, args);
   }
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async warn(message: string, ...args: any[]): Promise<void> {
-    // 추가 인자가 있으면 결합
-    let combinedMessage = message;
-    if (args.length > 0) {
-      combinedMessage = args.reduce((msg, arg) => {
-        // 에러 객체 처리
-        if (arg instanceof Error) {
-          return `${msg} ${arg.message}\n${arg.stack}`;
-        }
-        // 객체 처리
-        else if (typeof arg === 'object' && arg !== null) {
-          try {
-            return `${msg} ${JSON.stringify(arg)}`;
-          } catch {
-            return `${msg} [Object]`;
-          }
-        }
-        return `${msg} ${arg}`;
-      }, message);
-    }
-    
-    // 로그 메시지 포맷팅
-    const formattedMessage = `[${this.getTimestamp()}] [WARN] ${combinedMessage}`;
-    
-    // 콘솔에 출력
-    console.warn(formattedMessage);
-    
-    // 버퍼에 추가
-    this.logBuffer.push(formattedMessage);
-    
-    // 버퍼 크기가 최대치에 도달하면 저장
-    if (this.logBuffer.length >= this.maxBufferSize) {
-      await this.flushLogs();
-    }
+  async debug(message: string, ...args: unknown[]): Promise<void> {
+    return this.writeLog('debug', message, args);
   }
   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async error(message: string, ...args: any[]): Promise<void> {
-    // 추가 인자가 있으면 결합
-    let combinedMessage = message;
-    if (args.length > 0) {
-      combinedMessage = args.reduce((msg, arg) => {
-        // 에러 객체 처리
-        if (arg instanceof Error) {
-          return `${msg} ${arg.message}\n${arg.stack}`;
-        }
-        // 객체 처리
-        else if (typeof arg === 'object' && arg !== null) {
-          try {
-            return `${msg} ${JSON.stringify(arg)}`;
-          } catch {
-            return `${msg} [Object]`;
-          }
-        }
-        return `${msg} ${arg}`;
-      }, message);
-    }
-    
-    // 로그 메시지 포맷팅
-    const formattedMessage = `[${this.getTimestamp()}] [ERROR] ${combinedMessage}`;
-    
-    // 콘솔에 출력
-    console.error(formattedMessage);
-    
-    // 버퍼에 추가
-    this.logBuffer.push(formattedMessage);
-    
-    // 버퍼 크기가 최대치에 도달하면 저장
-    if (this.logBuffer.length >= this.maxBufferSize) {
-      await this.flushLogs();
-    }
+  async info(message: string, ...args: unknown[]): Promise<void> {
+    return this.writeLog('info', message, args);
+  }
+  
+  async warn(message: string, ...args: unknown[]): Promise<void> {
+    return this.writeLog('warn', message, args);
+  }
+  
+  async error(message: string, ...args: unknown[]): Promise<void> {
+    return this.writeLog('error', message, args);
   }
   
   // 로그 버퍼 저장
@@ -368,4 +276,4 @@ if (typeof process !== 'undefined') {
 }
 
 // 편의를 위한 기본 로거 인스턴스
-export const logger = getLogger(); 
+export const logger = getLogger();
