@@ -20,6 +20,32 @@ export async function POST(req: NextRequest) {
       );
     }
     
+    // 입력 길이 검증
+    const NAME_MAX_LENGTH = 100;
+    const EMAIL_MAX_LENGTH = 254;
+    const MESSAGE_MAX_LENGTH = 5000;
+    
+    if (typeof name !== 'string' || name.length > NAME_MAX_LENGTH) {
+      return NextResponse.json(
+        { error: `이름은 ${NAME_MAX_LENGTH}자 이내로 입력해주세요.` }, 
+        { status: 400 }
+      );
+    }
+    
+    if (typeof email !== 'string' || email.length > EMAIL_MAX_LENGTH) {
+      return NextResponse.json(
+        { error: `이메일은 ${EMAIL_MAX_LENGTH}자 이내로 입력해주세요.` }, 
+        { status: 400 }
+      );
+    }
+    
+    if (typeof message !== 'string' || message.length > MESSAGE_MAX_LENGTH) {
+      return NextResponse.json(
+        { error: `메시지는 ${MESSAGE_MAX_LENGTH}자 이내로 입력해주세요.` }, 
+        { status: 400 }
+      );
+    }
+    
     // 이메일 형식 검증
     if (!isValidEmail(email)) {
       return NextResponse.json(
@@ -28,16 +54,21 @@ export async function POST(req: NextRequest) {
       );
     }
     
+    // 입력값 trim 처리
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedMessage = message.trim();
+    
     // Prisma를 사용하여 DB에 저장
     const contact = await prisma.contact.create({
       data: {
-        name,
-        email,
-        message
+        name: trimmedName,
+        email: trimmedEmail,
+        message: trimmedMessage
       }
     });
     
-    console.log('새 문의가 접수되었습니다:', { name, email });
+    console.log('새 문의가 접수되었습니다:', { name: trimmedName, email: trimmedEmail });
     
     // 슬랙으로 알림 전송
     await sendContactNotification(contact);
@@ -50,6 +81,8 @@ export async function POST(req: NextRequest) {
     
   } catch (error) {
     console.error('문의 처리 중 오류 발생:', error);
+    
+    // 프로덕션에서는 상세 에러 정보 숨김
     return NextResponse.json(
       { error: '문의 처리 중 오류가 발생했습니다. 나중에 다시 시도해주세요.' }, 
       { status: 500 }

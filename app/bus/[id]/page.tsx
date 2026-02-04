@@ -302,8 +302,8 @@ export default function BusDetail() {
     
     // 정류장 순서에 따라 정렬
     return stationAverages.sort((a, b) => {
-      const stopA = busStops.find(stop => stop.stationId === a.stopId);
-      const stopB = busStops.find(stop => stop.stationId === b.stopId);
+      const stopA = busStops.find((stop: BusStop) => stop.stationId === a.stopId);
+      const stopB = busStops.find((stop: BusStop) => stop.stationId === b.stopId);
       return (stopA?.stationSeq || 0) - (stopB?.stationSeq || 0);
     });
   };
@@ -313,7 +313,7 @@ export default function BusDetail() {
   // 회차 정류장 ID를 기준으로 상행/하행 노선 분리
   const findTurnStationIndex = () => {
     if (busRoute.turnStationId) {
-      const turnIndex = busStops.findIndex(stop => stop.stationId === busRoute.turnStationId);
+      const turnIndex = busStops.findIndex((stop: BusStop) => stop.stationId === busRoute.turnStationId);
       if (turnIndex !== -1) {
         return turnIndex;
       }
@@ -653,7 +653,7 @@ export default function BusDetail() {
                       <tbody>
                         {selectedDays.map((dayIndex) => {
                           // 해당 요일, 정류장의 시간대별 데이터 추출
-                          const dayData = {};
+                          const dayData: Record<number, BusStopSeat> = {};
                           seatData.forEach(seat => {
                             if (seat.dayOfWeek === dayIndex) {
                               dayData[seat.hourOfDay] = seat;

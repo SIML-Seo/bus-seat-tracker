@@ -9,7 +9,9 @@
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "next lint",
-    "collect:bus": "tsx scripts/collectBusData.ts"
+    "collect:bus": "tsx scripts/collectBusData.ts",
+    "cleanup": "tsx scripts/cleanupStorage.ts",
+    "db:status": "tsx -e \"const { prisma } = require('./lib/prisma/client'); async function main() { console.log('BusLocation:', await prisma.busLocation.count()); console.log('BusStopSeats:', await prisma.busStopSeats.count()); console.log('BusRoute:', await prisma.busRoute.count()); console.log('BusStop:', await prisma.busStop.count()); await prisma.$disconnect(); } main();\""
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",

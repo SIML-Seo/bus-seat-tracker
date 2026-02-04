@@ -19,7 +19,7 @@ const PUBLIC_DATA_API_KEY = process.env.PUBLIC_DATA_API_KEY || process.env.PUBLI
 const BASE_URL = 'http://apis.data.go.kr/6410000';
 
 // 디버그 모드인지 확인
-const DEBUG = !!process.env.DEBUG;
+const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
 
 // API 요청 타입별 엔드포인트
 const API_ENDPOINTS = {
@@ -38,108 +38,123 @@ const HOLLYDAY_INFO_ENDPOINT = 'http://apis.data.go.kr/B090041/openapi/service/S
 // 좌석버스 타입코드 (잔여석 정보를 제공하는 버스 유형)
 const SEAT_BUS_TYPE_CODES = [11, 12, 14, 16, 17, 21, 22]; // 좌석버스 타입 코드
 
+// 조건부 디버그 로그 함수
+function debugLog(message: string, data?: unknown): void {
+  if (DEBUG) {
+    if (data !== undefined) {
+      console.log(`[DEBUG] ${message}`, data);
+    } else {
+      console.log(`[DEBUG] ${message}`);
+    }
+  }
+}
+
 // 디버그 로그
 const logApiRequest = (endpoint: string, params: Record<string, unknown>) => {
-  if (DEBUG) {
-    console.log(`[API 호출] ${endpoint} 파라미터:`, params);
-  }
+  debugLog(`API 호출: ${endpoint} 파라미터:`, params);
 };
 
 // API 응답 처리
 const handleApiResponse = <T>(response: AxiosResponse<any>, endpoint: string): T[] | null => {
-  console.log(`[DEBUG] API 응답 처리 (${endpoint})`);
+  debugLog(`API 응답 처리 (${endpoint})`);
   
   const apiResponse = response.data;
   
   // 응답 구조 로깅
-  console.log(`[DEBUG] 응답 구조:`, JSON.stringify(apiResponse, null, 2));
+  if (DEBUG) {
+    debugLog('응답 구조:', JSON.stringify(apiResponse, null, 2));
+  }
   
   // 응답 구조가 없는 경우
   if (!apiResponse) {
-    console.log(`[DEBUG] 응답이 없음`);
+    debugLog('응답이 없음');
     return null;
   }
   
   // 두 가지 가능한 응답 구조 체크 (기존 msgBody vs 정의된 response.body)
   if (apiResponse.msgBody) {
     // 기존 응답 구조 (msgBody)
-    console.log(`[DEBUG] msgBody 형태의 응답`);
+    debugLog('msgBody 형태의 응답');
     
     // 결과 코드 확인
     const resultCode = apiResponse.comMsgHeader?.returnCode || '';
-    console.log(`[DEBUG] 응답 코드: ${resultCode}`);
+    debugLog(`응답 코드: ${resultCode}`);
     
     if (resultCode !== '0' && resultCode !== '00' && resultCode !== 0) {
-      console.log(`[DEBUG] 에러 메시지: ${apiResponse.comMsgHeader?.errMsg || '알 수 없는 오류'}`);
+      debugLog(`에러 메시지: ${apiResponse.comMsgHeader?.errMsg || '알 수 없는 오류'}`);
       return null;
     }
     
     // 아이템 리스트 추출
     const itemList = extractItemList<T>(apiResponse.msgBody);
-    console.log(`[DEBUG] 추출된 아이템 수: ${itemList?.length || 0}`);
+    debugLog(`추출된 아이템 수: ${itemList?.length || 0}`);
     
     return itemList;
-  } else if (apiResponse.response.msgBody) {
+  } else if (apiResponse.response?.msgBody) {
     // 기존 응답 구조 (msgBody)
-    console.log(`[DEBUG] msgBody 형태의 응답`);
+    debugLog('response.msgBody 형태의 응답');
     
     // 결과 코드 확인
     const resultCode = apiResponse.response.msgHeader?.resultCode;
-    console.log(`[DEBUG] 응답 코드: ${resultCode}`);
+    debugLog(`응답 코드: ${resultCode}`);
     
     if (resultCode !== '0' && resultCode !== '00' && resultCode !== 0) {
-      console.log(`[DEBUG] 에러 메시지: ${apiResponse.response.msgHeader?.resultMessage || '알 수 없는 오류'}`);
+      debugLog(`에러 메시지: ${apiResponse.response.msgHeader?.resultMessage || '알 수 없는 오류'}`);
       return null;
     }
     
     // 아이템 리스트 추출
     const itemList = extractItemList<T>(apiResponse.response.msgBody);
-    console.log(`[DEBUG] 추출된 아이템 수: ${itemList?.length || 0}`);
+    debugLog(`추출된 아이템 수: ${itemList?.length || 0}`);
     
     return itemList;
   } else if (apiResponse.response) {
     // 새로운 응답 구조 (response.body)
-    console.log(`[DEBUG] response.body 형태의 응답`);
+    debugLog('response.body 형태의 응답');
     
     // 결과 코드 확인
     const resultCode = apiResponse.response.msgHeader?.resultCode;
-    console.log(`[DEBUG] 응답 코드: ${resultCode}`);
+    debugLog(`응답 코드: ${resultCode}`);
     
     if (resultCode !== '0' && resultCode !== '00' && resultCode !== 0) {
-      console.log(`[DEBUG] 에러 메시지: ${apiResponse.response.msgHeader?.resultMessage || '알 수 없는 오류'}`);
+      debugLog(`에러 메시지: ${apiResponse.response.msgHeader?.resultMessage || '알 수 없는 오류'}`);
       return null;
     }
     
     // items 구조 확인
     if (!apiResponse.response.msgBody?.items) {
-      console.log(`[DEBUG] 응답 body.items가 없음`);
+      debugLog('응답 body.items가 없음');
       return null;
     }
     
     // items.item이 배열인지 확인
     const item = apiResponse.response.msgBody.items.item;
     if (Array.isArray(item)) {
-      console.log(`[DEBUG] item은 배열, 길이: ${item.length}`);
+      debugLog(`item은 배열, 길이: ${item.length}`);
       return item as unknown as T[];
     } else if (item) {
-      console.log(`[DEBUG] item은 단일 객체`);
+      debugLog('item은 단일 객체');
       return [item] as unknown as T[];
     }
     
-    console.log(`[DEBUG] item 데이터가 없음`);
+    debugLog('item 데이터가 없음');
     return null;
   }
   
   // 둘 다 해당되지 않는 경우
-  console.log(`[DEBUG] 알 수 없는 응답 구조`);
-  console.log(apiResponse);
+  debugLog('알 수 없는 응답 구조');
+  if (DEBUG) {
+    console.log(apiResponse);
+  }
   return null;
 };
 
 // 아이템 리스트 추출 함수
 function extractItemList<T>(msgBody: any): T[] | null {
-  console.log('[DEBUG] 아이템 리스트 추출 시작');
-  console.log('[DEBUG] msgBody 구조:', JSON.stringify(msgBody, null, 2));
+  debugLog('아이템 리스트 추출 시작');
+  if (DEBUG) {
+    debugLog('msgBody 구조:', JSON.stringify(msgBody, null, 2));
+  }
   
   if (!msgBody) return null;
   
@@ -150,32 +165,32 @@ function extractItemList<T>(msgBody: any): T[] | null {
   );
   
   if (!itemsField) {
-    console.log('[DEBUG] 일반적인 아이템 리스트 필드 없음, 다른 필드 확인');
+    debugLog('일반적인 아이템 리스트 필드 없음, 다른 필드 확인');
     // itemList/items 필드가 없으면 busStationInfo와 같은 다른 특정 필드 검색
     for (const key of Object.keys(msgBody)) {
       if (typeof msgBody[key] === 'object' && msgBody[key] !== null) {
-        console.log(`[DEBUG] 대체 필드 발견: ${key}`);
+        debugLog(`대체 필드 발견: ${key}`);
         return [msgBody[key]] as T[];
       }
     }
     
     // 대체 필드도 없으면 msgBody 자체가 단일 객체인지 확인
     if (typeof msgBody === 'object' && !Array.isArray(msgBody) && Object.keys(msgBody).length > 0) {
-      console.log('[DEBUG] msgBody 자체를 단일 아이템으로 사용');
+      debugLog('msgBody 자체를 단일 아이템으로 사용');
       return [msgBody] as T[];
     }
     
-    console.log('[DEBUG] 아이템 데이터를 찾을 수 없음');
+    debugLog('아이템 데이터를 찾을 수 없음');
     return null;
   }
   
-  console.log(`[DEBUG] 발견된 아이템 리스트 필드: ${itemsField}`);
+  debugLog(`발견된 아이템 리스트 필드: ${itemsField}`);
   
   const items = msgBody[itemsField];
   
   // 단일 아이템인 경우 배열로 변환
   if (items && !Array.isArray(items)) {
-    console.log('[DEBUG] 단일 아이템을 배열로 변환');
+    debugLog('단일 아이템을 배열로 변환');
     return [items] as T[];
   }
   
@@ -185,13 +200,15 @@ function extractItemList<T>(msgBody: any): T[] | null {
 // API 호출 함수
 async function callApi<T>(endpoint: string, params: Record<string, unknown>): Promise<T[] | null> {
   try {
-    console.log(`[DEBUG] API 호출: ${endpoint}`);
-    console.log(`[DEBUG] 파라미터:`, JSON.stringify(params, null, 2));
+    debugLog(`API 호출: ${endpoint}`);
+    if (DEBUG) {
+      debugLog('파라미터:', JSON.stringify(params, null, 2));
+    }
     
     logApiRequest(endpoint, params);
     
     const fullUrl = `${BASE_URL}${endpoint}`;
-    console.log(`[DEBUG] 전체 URL 기본: ${fullUrl}`);
+    debugLog(`전체 URL 기본: ${fullUrl}`);
     
     const response = await axios.get(`${BASE_URL}${endpoint}`, {
       params: {
@@ -202,22 +219,26 @@ async function callApi<T>(endpoint: string, params: Record<string, unknown>): Pr
       timeout: 10000, // 10초 타임아웃
     });
     
-    console.log(`[DEBUG] API 응답 상태: ${response.status}`);
+    debugLog(`API 응답 상태: ${response.status}`);
     
     // 응답 데이터가 너무 크면 일부만 로깅
-    const responseLog = JSON.stringify(response.data).length > 10000 
-      ? `[데이터 크기 큼... 일부만 표시]: ${JSON.stringify(response.data).substring(0, 3000)}...`
-      : JSON.stringify(response.data, null, 2);
-    console.log(`[DEBUG] API 응답 데이터:`, responseLog);
+    if (DEBUG) {
+      const responseLog = JSON.stringify(response.data).length > 10000 
+        ? `[데이터 크기 큼... 일부만 표시]: ${JSON.stringify(response.data).substring(0, 3000)}...`
+        : JSON.stringify(response.data, null, 2);
+      debugLog('API 응답 데이터:', responseLog);
+    }
     
     return handleApiResponse<T>(response, endpoint);
   } catch (error) {
-    console.error(`[DEBUG] API 호출 오류 (${endpoint}):`, error);
+    console.error(`API 호출 오류 (${endpoint}):`, error);
     
     if (axios.isAxiosError(error)) {
-      console.error(`[상세 에러 정보] 상태 코드: ${error.response?.status}`);
-      console.error(`[상세 에러 정보] 에러 메시지: ${error.message}`);
-      console.error(`[상세 에러 정보] 응답 데이터:`, error.response?.data);
+      console.error(`상태 코드: ${error.response?.status}`);
+      console.error(`에러 메시지: ${error.message}`);
+      if (DEBUG) {
+        console.error('응답 데이터:', error.response?.data);
+      }
     }
     
     throw error;
@@ -251,7 +272,7 @@ export async function fetchRouteDetail(routeId: string): Promise<BusRouteInfo | 
     // 좌석버스가 아니면 null 반환
     const route = routeInfo[0];
     if (!SEAT_BUS_TYPE_CODES.includes(Number(route.routeTypeCd))) {
-      console.log('좌석버스가 아닌 노선:', routeId, route.routeTypeName);
+      debugLog(`좌석버스가 아닌 노선: ${routeId} ${route.routeTypeName}`);
       return null;
     }
     
@@ -354,15 +375,17 @@ export async function fetchHollydayInfo(year: number, month: number): Promise<Ho
       _type: 'json', // JSON 형식으로 응답 요청
     };
 
-    console.log('[DEBUG] 공휴일 API 호출 파라미터:', params);
+    debugLog('공휴일 API 호출 파라미터:', params);
 
     const response = await axios.get<HolidayApiResponse>(HOLLYDAY_INFO_ENDPOINT, {
       params,
       timeout: 10000, // 10초 타임아웃
     });
 
-    console.log('[DEBUG] 공휴일 API 응답 상태:', response.status);
-    console.log('[DEBUG] 공휴일 API 응답 데이터:', JSON.stringify(response.data, null, 2));
+    debugLog(`공휴일 API 응답 상태: ${response.status}`);
+    if (DEBUG) {
+      debugLog('공휴일 API 응답 데이터:', JSON.stringify(response.data, null, 2));
+    }
 
     // 응답 코드 확인
     if (response.data?.response?.header?.resultCode === '00') {
@@ -371,7 +394,7 @@ export async function fetchHollydayInfo(year: number, month: number): Promise<Ho
         // item이 단일 객체일 경우 배열로 변환
         return Array.isArray(items) ? items : [items];
       }
-      console.log('[DEBUG] 공휴일 정보 items 없음');
+      debugLog('공휴일 정보 items 없음');
       return []; // 아이템 없으면 빈 배열 반환
     } else {
       console.error('공휴일 정보 조회 API 오류:', response.data?.response?.header?.resultMsg || '알 수 없는 오류');
@@ -381,11 +404,12 @@ export async function fetchHollydayInfo(year: number, month: number): Promise<Ho
     console.error('공휴일 정보 API 호출 중 예외 발생:', error);
     // Axios 에러 상세 로깅
     if (axios.isAxiosError(error)) {
-      console.error(`[상세 에러 정보] 상태 코드: ${error.response?.status}`);
-      console.error(`[상세 에러 정보] 에러 메시지: ${error.message}`);
-      console.error(`[상세 에러 정보] 응답 데이터:`, error.response?.data);
+      console.error(`상태 코드: ${error.response?.status}`);
+      console.error(`에러 메시지: ${error.message}`);
+      if (DEBUG) {
+        console.error('응답 데이터:', error.response?.data);
+      }
     }
     return []; // 예외 발생 시 빈 배열 반환
   }
 }
-
