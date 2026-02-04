@@ -6,13 +6,16 @@
 
 - 버스 번호로 노선 검색
 - 시간대별/정류장별 평균 잔여석 정보 제공
-- 요일 및 시간 필터링
-- 3분 간격 실시간 데이터 수집(그룹화)
+- 요일 및 시간 필터링 (평일/주말/요일별)
+- 상행/하행 노선 분리 표시
+- 출퇴근 시간 집중 수집 (3분 간격)
+- 공휴일 자동 감지 및 수집 중단
+- 관리자 대시보드 (통계, 커버리지, 스토리지, 로그 조회, 데이터 초기화)
 
 ## 기술 스택
 
 ### 프론트엔드
-- Next.js
+- Next.js 15 (App Router)
 - Tailwind CSS
 
 ### 백엔드
@@ -21,15 +24,20 @@
 - PostgreSQL (Supabase)
 
 ### 데이터 수집
-- 공공데이터포털 API
+- 공공데이터포털 API (경기도 버스 노선/위치/좌석 정보)
+- 지속 실행 모드: 로컬 PC에서 `setInterval` 기반 수집
+- 단일 실행 모드: GitHub Actions / Cron 연동
+
+### 배포
+- Vercel (무료 티어)
 
 ## 문서
 
 프로젝트 설정 및 사용 가이드는 [docs](./docs) 폴더에서 확인할 수 있습니다:
 
-- [Supabase 설정 가이드](./docs/SUPABASE_SETUP.md)
-- [Cron 작업 설정 가이드](./docs/CRON_SETUP.md)
-- [Slack 알림 설정 가이드](./docs/SLACK_SETUP.md)
+- [프로젝트 분석 보고서](./docs/PROJECT_ANALYSIS.md)
+- [GitHub Actions 설정 가이드](./docs/GITHUB_ACTIONS_SETUP.md)
+- [Supabase 용량 관리 가이드](./docs/STORAGE_MANAGEMENT.md)
 
 ## 설치 방법
 
@@ -51,65 +59,152 @@ cd bus-seat-tracker
 npm install
 ```
 
-3. Supabase 프로젝트 설정
-   - [Supabase](https://supabase.com)에 가입하고 새 프로젝트 생성
-   - 프로젝트 URL, API 키, 데이터베이스 연결 문자열 복사
-   - [Supabase 대시보드](https://app.supabase.io) > 프로젝트 선택 > Settings > API > Project API keys
+3. 환경 설정
 
-4. 환경 설정
 `.env` 파일을 생성하고 다음 내용 추가:
 ```
+# 데이터베이스
 DATABASE_URL="postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-ID].supabase.co:5432/postgres"
+DIRECT_URL="postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-ID].supabase.co:5432/postgres"
+
+# Supabase
 SUPABASE_URL="https://[YOUR-PROJECT-ID].supabase.co"
 SUPABASE_KEY="your-anon-key"
+SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+
+# 공공데이터 API
 PUBLIC_DATA_API_KEY="your-api-key-here"
-DATA_COLLECTION_INTERVAL="120000"
+
+# 관리자
+ADMIN_PASSWORD="your-admin-password"
+
+# Cron API 인증 (선택사항)
+CRON_SECRET="your-cron-secret"
+
+# 디버그 (선택사항)
+DEBUG="false"
 ```
 
-5. 데이터베이스 마이그레이션
+4. 데이터베이스 마이그레이션
 ```bash
 npx prisma migrate dev --name init
 ```
 
-6. 개발 서버 실행
+5. 개발 서버 실행
 ```bash
 npm run dev
 ```
 
+## 데이터 수집
+
+### 지속 실행 모드 (로컬 개발용)
+```bash
+npm run collect:bus
+```
+- 로컬 PC에서 무한 실행
+- 출퇴근 시간 3분 / 일반 시간 18분 / 주말 40분 간격 수집
+- 노선 데이터가 없으면 자동으로 수집
+
+### 단일 실행 모드 (GitHub Actions / Cron용)
+```bash
+npm run collect:bus -- --single-run
+```
+- 1회 실행 후 종료
+- DB 기반 중복 데이터 필터링
+
+### 유틸리티 스크립트
+```bash
+# DB 상태 확인
+npm run db:status
+
+# 스토리지 정리
+npm run cleanup
+```
+
+## 관리자 대시보드
+
+`/admin` 경로로 접속합니다. `ADMIN_PASSWORD` 환경변수 설정이 필요합니다.
+
+- 수집 통계 (노선 수, 정류장 수, 위치 데이터 수, 좌석 통계 수)
+- 데이터 커버리지 (노선별 커버리지율)
+- 스토리지 관리 (데이터 정리, BusStopSeats 초기화, 전체 초기화)
+- 시스템 상태 (환경 변수, DB 연결, Prisma 상태)
+- 로그 조회 (레벨/키워드 필터링)
+
 ## 배포 방법 (Vercel)
 
-1. Vercel 계정 생성 및 연결
+1. Vercel 계정 생성 및 GitHub 연결
 
-2. Supabase 데이터베이스 연결 확인
-   - 데이터베이스 연결 문자열이 올바른지 확인
-
-3. Vercel에 환경 변수 설정
+2. Vercel에 환경 변수 설정:
    - `DATABASE_URL`: Supabase 데이터베이스 연결 문자열
+   - `DIRECT_URL`: Supabase 직접 연결 문자열
    - `SUPABASE_URL`: Supabase 프로젝트 URL
    - `SUPABASE_KEY`: Supabase API 키
+   - `SUPABASE_SERVICE_ROLE_KEY`: Supabase 서비스 롤 키
    - `PUBLIC_DATA_API_KEY`: 공공데이터포털 API 키
+   - `ADMIN_PASSWORD`: 관리자 비밀번호
+   - `CRON_SECRET`: Cron API 인증 토큰 (선택사항)
 
 ## 프로젝트 구조
 
 ```
 /
-├── app/                  # Next.js App Router
-│   ├── api/              # API 라우트
-│   │   ├── buses/        # 버스 API 엔드포인트
-│   │   └── cron/         # 데이터 수집 cron 작업
-│   ├── bus/[id]/         # 버스 상세 페이지
-│   └── page.tsx          # 메인 페이지
-├── components/           # React 컴포넌트
-├── lib/                  # 유틸리티 함수
-│   ├── api/              # API 관련 유틸리티
-│   ├── logging/          # 로그 파일 생성
-│   ├── prisma/           # Prisma 클라이언트
-│   └── supabase/         # Supabase 클라이언트
-├── logs/                 # 로그 파일
-├── prisma/               # Prisma ORM 스키마
-├── public/               # 정적 파일
-└── scripts/              # 버스 잔여석 데이터 수집 작업
+├── app/                      # Next.js App Router
+│   ├── admin/                # 관리자 대시보드
+│   ├── api/
+│   │   ├── admin/            # 관리자 API (stats, coverage, storage, system, logs, cleanup)
+│   │   ├── buses/            # 버스 노선/좌석 API
+│   │   ├── contact/          # 문의하기 API
+│   │   └── cron/             # 데이터 수집 Cron 엔드포인트
+│   ├── bus/[id]/             # 버스 상세 페이지
+│   └── page.tsx              # 메인 페이지 (검색)
+├── lib/
+│   ├── api/
+│   │   ├── busDataCollector.ts   # 데이터 수집 (지속 실행 모드)
+│   │   ├── busDataService.ts     # 데이터 수집 (단일 실행 모드)
+│   │   └── publicDataApi.ts      # 공공데이터 API 호출
+│   ├── logging/              # 로그 매니저 (로컬 + Supabase Storage)
+│   ├── prisma/               # Prisma 클라이언트
+│   ├── supabase/             # Supabase 클라이언트
+│   └── utils/                # 유틸리티 (인증, 에러 핸들링)
+├── middleware.ts             # 프로덕션 디버그 경로 차단
+├── prisma/                   # Prisma ORM 스키마
+├── scripts/
+│   ├── collectBusData.ts     # 수집 스크립트 (지속/단일 모드)
+│   └── cleanupStorage.ts     # 스토리지 정리 스크립트
+└── .github/workflows/        # GitHub Actions 워크플로우
 ```
+
+## 로깅 시스템
+
+로그는 로컬 파일과 Supabase Storage에 동시 저장됩니다.
+
+### 로그 레벨
+- `debug`: 개발 중 상세 정보
+- `info`: 시스템 작동 상태 및 정보
+- `warn`: 경고 메시지
+- `error`: 오류 메시지
+
+### 사용법
+```typescript
+import { logger } from '@/lib/logging';
+
+logger.info('서비스가 시작되었습니다.');
+logger.error('오류가 발생했습니다.', error);
+logger.info('데이터 처리 완료', { count: 10, status: 'success' });
+```
+
+### 로그 파일 위치
+- **로컬**: `{프로젝트 루트}/logs/log_YYYY-MM-DD.txt`
+- **Supabase**: `Storage > bus-logs > YYYY-MM-DD/log_YYYY-MM-DD.txt`
+- **관리자 대시보드**: `/admin` 페이지의 로그 조회 섹션
+
+### Supabase Storage 설정 (로그 저장용)
+
+1. Supabase 대시보드 → Storage → New Bucket → 이름: `bus-logs` (private)
+2. Policies 탭 → New Policy → `service_role_access`:
+   - Allowed operations: `SELECT, INSERT, UPDATE, DELETE`
+   - Policy definition: `(auth.role() = 'service_role')`
 
 ## 라이선스
 
@@ -122,73 +217,3 @@ MIT
 3. 변경 사항 커밋 (`git commit -m 'Add some amazing feature'`)
 4. 브랜치에 푸시 (`git push origin feature/amazing-feature`)
 5. Pull Request 생성
-
-## 로깅 시스템 설정 및 사용법
-
-프로젝트에는 로깅 시스템이 통합되어 있으며, 모든 로그는 로컬 및 Supabase Storage에 저장됩니다.
-
-### 설정 방법
-
-1. Supabase Storage 버킷 생성하기:
-   - Supabase 대시보드에서 "Storage" 메뉴로 이동
-   - "New Bucket" 버튼 클릭
-   - 버킷 이름을 "bus-logs"로 설정 (private 선택)
-   - "Save" 버튼 클릭
-
-2. 권한 설정:
-   - 생성된 버킷의 "Policies" 탭 클릭
-   - "New Policy" 버튼 클릭
-   - "For full customization" 선택
-   - 다음과 같이 설정:
-     - Policy name: `service_role_access`
-     - Allowed operations: `SELECT, INSERT, UPDATE, DELETE`
-     - Policy definition: `(auth.role() = 'service_role')`
-     - Policy action: `PERMISSIVE`
-   - "Save Policy" 버튼 클릭
-
-3. .env 파일에 서비스 롤 키 추가:
-   ```
-   # Supabase Service Role Key (로깅 시스템용)
-   SUPABASE_SERVICE_ROLE_KEY="프로젝트 서비스 롤 키"
-   ```
-
-### 로거 사용법
-
-로깅 시스템은 다음 레벨의 로그를 제공합니다:
-- `debug`: 개발 중 상세 정보
-- `info`: 시스템 작동 상태 및 정보
-- `warn`: 경고 메시지
-- `error`: 오류 메시지
-
-코드에서 로깅 시스템 사용하기:
-
-```typescript
-import { logger } from '@/lib/logging';
-
-// 기본 로깅
-logger.info('서비스가 시작되었습니다.');
-
-// 오류 로깅
-try {
-  // 코드 실행
-} catch (error) {
-  logger.error('오류가 발생했습니다.', error);
-}
-
-// 추가 데이터와 함께 로깅
-logger.info('데이터 처리 완료', { count: 10, status: 'success' });
-```
-
-### 로그 파일 위치
-
-- **로컬**: `{프로젝트 루트}/logs/log_YYYY-MM-DD.txt`
-- **Supabase**: `Storage > bus-logs > YYYY-MM-DD/log_YYYY-MM-DD.txt`
-
-### 로깅 시스템 특징
-
-- **날짜별 분류**: 매일 새로운 로그 파일이 생성됩니다.
-- **버퍼링**: 로그는 메모리에 버퍼링되었다가 100개 항목마다 또는 1분마다 파일로 저장됩니다.
-- **오류 복원**: 저장 실패 시 자동 재시도 메커니즘이 포함되어 있습니다.
-- **종료 시 저장**: 프로세스 종료 시 모든 버퍼된 로그가 저장됩니다.
-
-이 로깅 시스템을 통해 서비스의 동작을 모니터링하고 문제 발생 시 원인을 효과적으로 추적할 수 있습니다.
