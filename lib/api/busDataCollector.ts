@@ -251,9 +251,11 @@ async function updateSeatStats(statsByStopRoute: Map<string, { seats: number[]; 
 
             if (existingStat) {
               // 2. 기존 데이터가 있으면 업데이트
-              const newAverage = (existingStat.averageSeats * existingStat.samplesCount + averageSeats * trimmedSeats.length) / 
-                              (existingStat.samplesCount + trimmedSeats.length);
-              
+              const MAX_EFFECTIVE_SAMPLES = 200;
+              const effectiveOldCount = Math.min(existingStat.samplesCount, MAX_EFFECTIVE_SAMPLES);
+              const newAverage = (existingStat.averageSeats * effectiveOldCount + averageSeats * trimmedSeats.length) /
+                              (effectiveOldCount + trimmedSeats.length);
+
               return tx.busStopSeats.update({
                 where: {
                   busRouteId_stopId_dayOfWeek_hourOfDay: {
@@ -265,7 +267,7 @@ async function updateSeatStats(statsByStopRoute: Map<string, { seats: number[]; 
                 },
                 data: {
                   averageSeats: newAverage,
-                  samplesCount: existingStat.samplesCount + trimmedSeats.length,
+                  samplesCount: Math.min(effectiveOldCount + trimmedSeats.length, MAX_EFFECTIVE_SAMPLES),
                   updatedAt: now
                 }
               });
@@ -623,20 +625,15 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
   const dayOfWeek = now.getDay(); 
   const hourOfDay = now.getHours();
   
-  // 수집 간격에 따라 cutoffTime 설정 (현재 간격의 2배로 설정하여 충분한 데이터 확보)
-  const interval = getCollectionInterval();
-  // 최소 5분, 최대 60분의 범위 내에서 수집 간격의 2배를 cutoff로 설정
-  const cutoffMinutes = Math.min(Math.max(interval * 2, 5), 60);
-  const cutoffTime = new Date(now.getTime() - cutoffMinutes * 60 * 1000);
-  
-  logger.info(`통계 계산 기준 시간: 최근 ${cutoffMinutes}분 이내 데이터`);
+  // 이번 수집에서 저장한 데이터만 통계에 반영 (now 이후에 저장된 BusLocation만 대상)
+  logger.info(`통계 계산 기준 시간: 이번 수집 시작 시점(${now.toLocaleTimeString()}) 이후 데이터`);
   
   try {
     // 1. 최근 버스 위치 정보 가져오기
     const recentLocations = await prisma.busLocation.findMany({
       where: {
         updatedAt: {
-          gte: cutoffTime
+          gte: now
         }
       },
       include: {

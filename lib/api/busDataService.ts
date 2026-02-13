@@ -229,9 +229,11 @@ export async function updateSeatStats(
 
             if (existingStat) {
               // 2. 기존 데이터가 있으면 업데이트
-              const newAverage = (existingStat.averageSeats * existingStat.samplesCount + averageSeats * trimmedSeats.length) / 
-                              (existingStat.samplesCount + trimmedSeats.length);
-              
+              const MAX_EFFECTIVE_SAMPLES = 200;
+              const effectiveOldCount = Math.min(existingStat.samplesCount, MAX_EFFECTIVE_SAMPLES);
+              const newAverage = (existingStat.averageSeats * effectiveOldCount + averageSeats * trimmedSeats.length) /
+                              (effectiveOldCount + trimmedSeats.length);
+
               return tx.busStopSeats.update({
                 where: {
                   busRouteId_stopId_dayOfWeek_hourOfDay: {
@@ -243,7 +245,7 @@ export async function updateSeatStats(
                 },
                 data: {
                   averageSeats: newAverage,
-                  samplesCount: existingStat.samplesCount + trimmedSeats.length,
+                  samplesCount: Math.min(effectiveOldCount + trimmedSeats.length, MAX_EFFECTIVE_SAMPLES),
                   updatedAt: now
                 }
               });
@@ -579,11 +581,10 @@ export async function collectBusLocationsOnce(): Promise<{
     // 8. 통계 업데이트
     const statsByStopRoute = new Map<string, { seats: number[]; busRouteId: string; stopName: string }>();
     
-    // 최근 수집된 데이터로 통계 계산
-    const cutoffTime = new Date(now.getTime() - 30 * 60 * 1000); // 최근 30분
+    // 이번 수집에서 저장한 데이터만 통계에 반영 (now 이후에 저장된 BusLocation만 대상)
     const recentLocations = await prisma.busLocation.findMany({
       where: {
-        updatedAt: { gte: cutoffTime }
+        updatedAt: { gte: now }
       }
     });
     
