@@ -757,24 +757,42 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
 // 월별 공휴일 정보 캐시
 let currentMonthHolidays: HolidayItem[] = [];
 let lastHolidayFetchDate = ''; // 마지막으로 공휴일 정보를 가져온 날짜 (YYYY-MM-DD)
+let nextHolidayRetryAt: Date | null = null;
+const HOLIDAY_INFO_RETRY_INTERVAL_MINUTES = 15;
 
-async function updateHolidayInfo(now: Date): Promise<void> {
+function scheduleHolidayInfoRetry(now: Date): void {
+  nextHolidayRetryAt = new Date(now.getTime() + HOLIDAY_INFO_RETRY_INTERVAL_MINUTES * 60 * 1000);
+  logger.warn(
+    `공휴일 정보 갱신 실패. ${HOLIDAY_INFO_RETRY_INTERVAL_MINUTES}분 후 재시도 예정 (${nextHolidayRetryAt.toLocaleTimeString()})`
+  );
+}
+
+async function updateHolidayInfo(now: Date, reason: 'startup' | 'date_change' | 'retry'): Promise<boolean> {
   const currentDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  
-  // 날짜가 바뀌었으면 공휴일 정보 업데이트
-  if (currentDateStr !== lastHolidayFetchDate) {
-    logger.info(`날짜 변경 (${currentDateStr}), ${now.getFullYear()}년 ${now.getMonth() + 1}월 공휴일 정보 업데이트 시도...`);
-    try {
-      const holidays = await fetchHollydayInfo(now.getFullYear(), now.getMonth() + 1);
-      currentMonthHolidays = holidays;
-      lastHolidayFetchDate = currentDateStr;
-      logger.info(`공휴일 정보 업데이트 완료: ${holidays.length}개`);
-      if (holidays.length > 0) {
-        logger.info(`이번 달 공휴일: ${holidays.map(h => `${h.locdate}(${h.dateName})`).join(', ')}`);
-      }
-    } catch (error) {
-      logger.error('공휴일 정보 업데이트 중 오류 발생:', error);
+
+  // 오늘자 공휴일 정보가 이미 있으면 추가 호출 불필요
+  if (currentDateStr === lastHolidayFetchDate) {
+    return true;
+  }
+
+  const reasonLabel = reason === 'startup' ? '시작 시' : reason === 'date_change' ? '날짜 변경' : '재시도';
+  logger.info(`${reasonLabel} 공휴일 정보 업데이트 시도 (${currentDateStr}, ${now.getFullYear()}년 ${now.getMonth() + 1}월)...`);
+
+  try {
+    const holidays = await fetchHollydayInfo(now.getFullYear(), now.getMonth() + 1);
+    currentMonthHolidays = holidays;
+    lastHolidayFetchDate = currentDateStr;
+    nextHolidayRetryAt = null;
+
+    logger.info(`공휴일 정보 업데이트 완료: ${holidays.length}개`);
+    if (holidays.length > 0) {
+      logger.info(`이번 달 공휴일: ${holidays.map(h => `${h.locdate}(${h.dateName})`).join(', ')}`);
     }
+
+    return true;
+  } catch (error) {
+    logger.error('공휴일 정보 업데이트 중 오류 발생:', error);
+    return false;
   }
 }
 
@@ -787,8 +805,12 @@ export async function startOptimizedDataCollection(): Promise<void> {
   logger.info('- 매 평일 하나의 집중 그룹만 수집 (5주 주기 순환)');
   logger.info('- 오래된 데이터 자동 정리: 6시간 간격, 7일 이상 데이터 삭제');
 
-  // 시작 시 공휴일 정보 로딩 (버그 수정: 스크립트 시작 시 공휴일 확인)
-  await updateHolidayInfo(new Date());
+  // 시작 시 공휴일 정보 로딩
+  const startupNow = new Date();
+  const startupHolidayLoaded = await updateHolidayInfo(startupNow, 'startup');
+  if (!startupHolidayLoaded) {
+    scheduleHolidayInfoRetry(startupNow);
+  }
 
   // DB에서 모든 좌석버스 노선 가져오기
   let busRoutes = await prisma.busRoute.findMany({
@@ -836,8 +858,9 @@ export async function startOptimizedDataCollection(): Promise<void> {
     const now = new Date();
     const hour = now.getHours();
     const dayOfWeek = now.getDay();
+    const currentDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     
-    // 날짜가 바뀌었는지 확인하여 API 호출 카운트 초기화 및 공휴일 정보 업데이트
+    // 날짜가 바뀌었는지 확인하여 API 호출 카운트 초기화
     const currentDateString = now.toDateString();
     if (currentDateString !== lastResetDate) {
       logger.info(`날짜가 변경되어 API 호출 카운트 초기화. 이전: ${dailyApiCallCount}`);
@@ -849,8 +872,19 @@ export async function startOptimizedDataCollection(): Promise<void> {
       lastBusPositionCache.clear();
       logger.info(`날짜 변경으로 버스 위치 캐시 초기화: ${cacheSize}개 항목 제거`);
 
-      // 공휴일 정보 업데이트
-      await updateHolidayInfo(now);
+      // 날짜 변경 시 공휴일 정보 즉시 1회 갱신
+      nextHolidayRetryAt = null;
+      const holidayLoaded = await updateHolidayInfo(now, 'date_change');
+      if (!holidayLoaded) {
+        scheduleHolidayInfoRetry(now);
+      }
+    } else if (currentDateStr !== lastHolidayFetchDate && (!nextHolidayRetryAt || now >= nextHolidayRetryAt)) {
+      // 당일 공휴일 정보가 없고 재시도 시각이 되었을 때만 재시도
+      logger.info('공휴일 정보 재시도 시각 도달, 갱신을 다시 시도합니다.');
+      const holidayLoaded = await updateHolidayInfo(now, 'retry');
+      if (!holidayLoaded) {
+        scheduleHolidayInfoRetry(now);
+      }
     }
     
     // 오늘이 공휴일인지 확인

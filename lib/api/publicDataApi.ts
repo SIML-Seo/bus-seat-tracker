@@ -33,7 +33,7 @@ const API_ENDPOINTS = {
   BUS_BASE_INFO: '/baseinfoservice/v2/getBaseInfoItemv2', // 버스 기본 정보
 };
 
-const HOLLYDAY_INFO_ENDPOINT = 'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo';
+const HOLLYDAY_INFO_ENDPOINT = 'https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo';
 
 // 좌석버스 타입코드 (잔여석 정보를 제공하는 버스 유형)
 const SEAT_BUS_TYPE_CODES = [11, 12, 14, 16, 17, 21, 22]; // 좌석버스 타입 코드
@@ -47,6 +47,24 @@ function debugLog(message: string, data?: unknown): void {
       console.log(`[DEBUG] ${message}`);
     }
   }
+}
+
+function normalizePublicDataServiceKey(rawKey?: string): string {
+  const trimmed = rawKey?.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  // 인코딩 키(%2F...)가 들어오면 디코딩해서 내부에서 일관 처리
+  if (trimmed.includes('%')) {
+    try {
+      return decodeURIComponent(trimmed);
+    } catch {
+      return trimmed;
+    }
+  }
+
+  return trimmed;
 }
 
 // 디버그 로그
@@ -367,49 +385,90 @@ export async function fetchBusStationInfo(stationId: string): Promise<BusStation
 
 // 7. 공휴일 정보 조회
 export async function fetchHollydayInfo(year: number, month: number): Promise<HolidayItem[]> {
-  try {
-    const params = {
-      serviceKey: PUBLIC_DATA_API_KEY, // 기존 API 키 사용
-      solYear: year,
-      solMonth: String(month).padStart(2, '0'), // 월을 2자리로 (예: 9 -> '09')
-      _type: 'json', // JSON 형식으로 응답 요청
-    };
-
-    debugLog('공휴일 API 호출 파라미터:', params);
-
-    const response = await axios.get<HolidayApiResponse>(HOLLYDAY_INFO_ENDPOINT, {
-      params,
-      timeout: 10000, // 10초 타임아웃
-    });
-
-    debugLog(`공휴일 API 응답 상태: ${response.status}`);
-    if (DEBUG) {
-      debugLog('공휴일 API 응답 데이터:', JSON.stringify(response.data, null, 2));
-    }
-
-    // 응답 코드 확인
-    if (response.data?.response?.header?.resultCode === '00') {
-      const items = response.data.response.body?.items?.item;
-      if (items) {
-        // item이 단일 객체일 경우 배열로 변환
-        return Array.isArray(items) ? items : [items];
-      }
-      debugLog('공휴일 정보 items 없음');
-      return []; // 아이템 없으면 빈 배열 반환
-    } else {
-      console.error('공휴일 정보 조회 API 오류:', response.data?.response?.header?.resultMsg || '알 수 없는 오류');
-      return []; // API 오류 시 빈 배열 반환
-    }
-  } catch (error) {
-    console.error('공휴일 정보 API 호출 중 예외 발생:', error);
-    // Axios 에러 상세 로깅
-    if (axios.isAxiosError(error)) {
-      console.error(`상태 코드: ${error.response?.status}`);
-      console.error(`에러 메시지: ${error.message}`);
-      if (DEBUG) {
-        console.error('응답 데이터:', error.response?.data);
-      }
-    }
-    return []; // 예외 발생 시 빈 배열 반환
+  // 공휴일 API가 별도 승인 키를 요구할 수 있어 전용 키를 우선 사용
+  const holidayApiKey = process.env.PUBLIC_DATA_HOLIDAY_API_KEY;
+  const apiKey = normalizePublicDataServiceKey(holidayApiKey || PUBLIC_DATA_API_KEY);
+  if (!apiKey) {
+    throw new Error('공휴일 API 키가 설정되지 않았습니다. PUBLIC_DATA_HOLIDAY_API_KEY 또는 PUBLIC_DATA_API_KEY를 확인하세요.');
   }
+
+  const baseParams = {
+    solYear: String(year),
+    solMonth: String(month).padStart(2, '0'),
+    pageNo: '1',
+    numOfRows: '100',
+    _type: 'json',
+  };
+
+  // 일부 API Gateway 환경에서 ServiceKey/serviceKey 케이스 민감도가 달라 재시도
+  const keyParamCandidates: Array<Record<string, string>> = [
+    { ServiceKey: apiKey },
+    { serviceKey: apiKey },
+  ];
+  let lastError: unknown = null;
+
+  for (const keyParams of keyParamCandidates) {
+    const params = { ...baseParams, ...keyParams };
+    const keyParamName = Object.keys(keyParams)[0];
+
+    try {
+      debugLog('공휴일 API 호출 파라미터:', {
+        ...baseParams,
+        keyParamName,
+        endpoint: HOLLYDAY_INFO_ENDPOINT,
+      });
+
+      const response = await axios.get<HolidayApiResponse>(HOLLYDAY_INFO_ENDPOINT, {
+        params,
+        timeout: 10000,
+      });
+
+      debugLog(`공휴일 API 응답 상태: ${response.status}`);
+      if (DEBUG) {
+        debugLog('공휴일 API 응답 데이터:', JSON.stringify(response.data, null, 2));
+      }
+
+      const resultCode = response.data?.response?.header?.resultCode;
+      const resultMsg = response.data?.response?.header?.resultMsg || '알 수 없는 오류';
+
+      if (resultCode !== '00') {
+        throw new Error(`공휴일 정보 조회 API 오류 [${resultCode}]: ${resultMsg}`);
+      }
+
+      const body = response.data?.response?.body;
+      const items = body?.items?.item;
+      const holidayItems = Array.isArray(items) ? items : (items ? [items] : []);
+      const normalizedItems = holidayItems.map(item => ({
+        ...item,
+        locdate: String(item.locdate).trim(),
+        isHoliday: item.isHoliday === 'Y' ? ('Y' as const) : ('N' as const),
+      }));
+
+      debugLog(
+        `공휴일 정보 파싱 완료 (totalCount=${body?.totalCount ?? 0}, parsedCount=${normalizedItems.length}, keyParam=${keyParamName}, endpoint=${HOLLYDAY_INFO_ENDPOINT})`
+      );
+
+      return normalizedItems;
+    } catch (error) {
+      lastError = error;
+
+      if (axios.isAxiosError(error)) {
+        const statusCode = error.response?.status;
+        const bodyPreview = typeof error.response?.data === 'string'
+          ? error.response.data.trim()
+          : '';
+        console.error(
+          `공휴일 API 호출 실패 (endpoint=${HOLLYDAY_INFO_ENDPOINT}, keyParam=${keyParamName}, status=${statusCode}): ${error.message}${bodyPreview ? `, body=${bodyPreview}` : ''}`
+        );
+      } else {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`공휴일 API 호출 실패 (endpoint=${HOLLYDAY_INFO_ENDPOINT}, keyParam=${keyParamName}): ${message}`);
+      }
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error('공휴일 정보 조회에 실패했습니다.');
 }
