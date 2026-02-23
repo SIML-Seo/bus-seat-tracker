@@ -22,7 +22,16 @@ export async function GET(request: NextRequest) {
         routeName: {
           contains: busNumber
         }
-      }
+      },
+      select: {
+        id: true,
+        routeName: true,
+        type: true,
+        routeTypeName: true,
+        startStopName: true,
+        endStopName: true,
+        company: true,
+      },
     });
 
     // DB에 없는 경우 API에서 검색 (개발 환경에서만)

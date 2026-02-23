@@ -54,6 +54,14 @@ export async function GET(
       where: {
         id: busRouteId,
       },
+      select: {
+        id: true,
+        routeName: true,
+        type: true,
+        routeTypeName: true,
+        startStopName: true,
+        endStopName: true,
+      },
     });
     
     if (!busRoute) {
@@ -66,6 +74,15 @@ export async function GET(
     // 정류장별 좌석 데이터 조회
     let seatData = await prisma.busStopSeats.findMany({
       where: whereCondition,
+      select: {
+        busRouteId: true,
+        stopId: true,
+        stopName: true,
+        averageSeats: true,
+        dayOfWeek: true,
+        hourOfDay: true,
+        samplesCount: true,
+      },
       orderBy: [
         { dayOfWeek: 'asc' },
         { hourOfDay: 'asc' },

@@ -11,21 +11,26 @@ export class LogManager {
   private currentDate: string;
   private logFileName: string;
   private readonly bucketName = 'bus-logs';
-  private readonly maxBufferSize = 100; // 버퍼 최대 크기
+  private readonly maxBufferSize = 500; // 버퍼 최대 크기 (100 → 500)
   private readonly localLogDir: string;
   private bufferTimer: NodeJS.Timeout | null = null;
-  private readonly flushInterval = 60 * 1000; // 1분마다 강제 저장
-  
+  private readonly flushInterval = 5 * 60 * 1000; // 5분마다 강제 저장 (1분 → 5분)
+  private bucketChecked = false; // 버킷 존재 여부 캐싱
+  private lastUploadTime = 0; // 마지막 Supabase 업로드 시간
+  private retryCount = 0; // 재시도 횟수
+  private readonly maxRetries = 3; // 최대 재시도 횟수
+  private readonly uploadInterval = 30 * 60 * 1000; // Supabase 업로드 간격 (30분)
+
   constructor() {
     this.currentDate = this.getFormattedDate();
     this.logFileName = `log_${this.currentDate}.txt`;
     this.localLogDir = path.join(process.cwd(), 'logs');
-    
+
     // 로컬 로그 디렉토리 생성
     if (!fs.existsSync(this.localLogDir)) {
       fs.mkdirSync(this.localLogDir, { recursive: true });
     }
-    
+
     // 정기적으로 로그 저장
     this.bufferTimer = setInterval(() => {
       this.flushLogs().catch(err => {
@@ -33,17 +38,17 @@ export class LogManager {
       });
     }, this.flushInterval);
   }
-  
+
   // 날짜 포맷팅 (YYYY-MM-DD)
   private getFormattedDate(): string {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
-  
+
   // 타임스탬프 포맷팅
   private getTimestamp(): string {
     const now = new Date();
-    
+
     // 날짜 포맷터
     const dateFormatter = new Intl.DateTimeFormat('ko-KR', {
       year: 'numeric',
@@ -55,24 +60,24 @@ export class LogManager {
       hour12: false,
       timeZone: 'Asia/Seoul'
     });
-  
+
     // 포맷팅된 부분들을 가져옴
     const parts = dateFormatter.formatToParts(now);
-    
+
     // 필요한 부분을 객체로 변환
     const formatted = parts.reduce((acc, part) => {
       acc[part.type] = part.value;
       return acc;
     }, {} as Record<string, string>);
-    
+
     // YYYY-MM-DD HH:MM:SS 형식으로 조합
     return `${formatted.year}-${formatted.month}-${formatted.day} ${formatted.hour}:${formatted.minute}:${formatted.second}`;
   }
-  
+
   // 공통 메시지 포맷팅 함수
   private formatMessage(message: string, args: unknown[]): string {
     if (args.length === 0) return message;
-    
+
     return args.reduce<string>((msg, arg) => {
       // 에러 객체 처리
       if (arg instanceof Error) {
@@ -89,134 +94,145 @@ export class LogManager {
       return `${msg} ${arg}`;
     }, message);
   }
-  
+
   // 공통 로그 처리 함수
   private async writeLog(level: LogLevel, message: string, args: unknown[]): Promise<void> {
     // 날짜가 바뀌었는지 확인
     const currentDate = this.getFormattedDate();
     if (currentDate !== this.currentDate) {
-      await this.flushLogs(); // 이전 날짜의 로그 저장
+      await this.flushLogs(true); // 날짜 변경 시 강제 업로드
       this.currentDate = currentDate;
       this.logFileName = `log_${this.currentDate}.txt`;
     }
-    
+
     const combinedMessage = this.formatMessage(message, args);
     const formattedMessage = `[${this.getTimestamp()}] [${level.toUpperCase()}] ${combinedMessage}`;
-    
+
     // 콘솔에 출력
     const consoleMethod = level === 'debug' ? console.debug :
                          level === 'warn' ? console.warn :
                          level === 'error' ? console.error :
                          console.log;
     consoleMethod(formattedMessage);
-    
+
     // 버퍼에 추가
     this.logBuffer.push(formattedMessage);
-    
+
     // 버퍼 크기가 최대치에 도달하면 저장
     if (this.logBuffer.length >= this.maxBufferSize) {
       await this.flushLogs();
     }
   }
-  
+
   // 로그 메서드들
   async log(message: string, ...args: unknown[]): Promise<void> {
     return this.writeLog('info', message, args);
   }
-  
+
   async debug(message: string, ...args: unknown[]): Promise<void> {
     return this.writeLog('debug', message, args);
   }
-  
+
   async info(message: string, ...args: unknown[]): Promise<void> {
     return this.writeLog('info', message, args);
   }
-  
+
   async warn(message: string, ...args: unknown[]): Promise<void> {
     return this.writeLog('warn', message, args);
   }
-  
+
   async error(message: string, ...args: unknown[]): Promise<void> {
     return this.writeLog('error', message, args);
   }
-  
-  // 로그 버퍼 저장
-  async flushLogs(): Promise<void> {
-    if (this.logBuffer.length === 0) return;
-    
-    const logContent = this.logBuffer.join('\n') + '\n';
-    // 버퍼 비우기 전에 복사
-    const bufferCopy = [...this.logBuffer];
-    this.logBuffer = [];
-    
-    try {
-      // 로컬 파일에 로그 저장 (백업)
-      const localFilePath = path.join(this.localLogDir, this.logFileName);
-      fs.appendFileSync(localFilePath, logContent);
-      console.log(`[로거] ${bufferCopy.length}개 로그 항목을 로컬에 저장했습니다.`);
-      
-      // Supabase Storage에 업로드
+
+  // 로그 버퍼 저장 (forceUpload: 강제 Supabase 업로드 여부)
+  async flushLogs(forceUpload = false): Promise<void> {
+    const localFilePath = path.join(this.localLogDir, this.logFileName);
+
+    if (this.logBuffer.length > 0) {
+      const logContent = this.logBuffer.join('\n') + '\n';
+      const bufferCopy = [...this.logBuffer];
+      this.logBuffer = [];
+
       try {
-        // Supabase 클라이언트 가져오기 (관리자 권한)
-        const supabase = getSupabaseAdmin();
-        
-        // 버킷이 존재하는지 확인
-        const { data: buckets } = await supabase.storage.listBuckets();
-        const bucketExists = buckets?.some(bucket => bucket.name === this.bucketName);
-        
-        // 버킷이 없으면 생성
-        if (!bucketExists) {
-          await supabase.storage.createBucket(this.bucketName, {
-            public: false,
-          });
-          console.log(`[로거] '${this.bucketName}' 버킷을 생성했습니다.`);
-        }
-        
-        // 파일 경로
-        const filePath = `${this.currentDate}/${this.logFileName}`;
-        
-        // 로컬 파일의 전체 내용을 읽어 Supabase에 업로드 (더 안정적인 방법)
-        // 이렇게 하면 파일 내용 동기화 문제를 예방할 수 있음
-        const fullLocalContent = fs.readFileSync(localFilePath, 'utf8');
-        
-        // 파일 업로드 (덮어쓰기)
-        const { error } = await supabase.storage
-          .from(this.bucketName)
-          .upload(filePath, fullLocalContent, {
-            upsert: true, // 이미 존재하면 덮어쓰기
-            contentType: 'text/plain',
-          });
-        
-        if (error) {
-          console.error(`[로거] Supabase 업로드 실패: ${error.message}`);
-          throw error;
-        }
-        
-        console.log(`[로거] 로그 파일을 Supabase에 성공적으로 업로드했습니다. (${this.currentDate}/${this.logFileName})`);
+        // 로컬 파일에 로그 저장
+        fs.appendFileSync(localFilePath, logContent);
+        console.log(`[로거] ${bufferCopy.length}개 로그 항목을 로컬에 저장했습니다.`);
       } catch (error) {
-        console.error('[로거] Supabase 로그 업로드 실패:', error);
-        // 로컬에 저장했으므로 다음 시도에서 재업로드되도록 버퍼를 일부 복원
-        this.scheduleRetry();
+        console.error('[로거] 로그 저장 실패:', error);
+        this.logBuffer = [...this.logBuffer, ...bufferCopy];
+        return;
       }
-    } catch (error) {
-      console.error('[로거] 로그 저장 실패:', error);
-      // 버퍼 복원
-      this.logBuffer = [...this.logBuffer, ...bufferCopy];
+    }
+
+    // Supabase 업로드: forceUpload이거나 30분 경과 시
+    const now = Date.now();
+    if (forceUpload || now - this.lastUploadTime >= this.uploadInterval) {
+      if (fs.existsSync(localFilePath)) {
+        await this.uploadToSupabase(localFilePath);
+      }
     }
   }
-  
-  // 실패한 업로드 재시도 스케줄링
+
+  // Supabase Storage 업로드
+  private async uploadToSupabase(localFilePath: string): Promise<void> {
+    try {
+      const supabase = getSupabaseAdmin();
+
+      // 버킷 존재 여부 확인 (최초 1회만)
+      if (!this.bucketChecked) {
+        const { data: buckets } = await supabase.storage.listBuckets();
+        const bucketExists = buckets?.some(bucket => bucket.name === this.bucketName);
+
+        if (!bucketExists) {
+          await supabase.storage.createBucket(this.bucketName, { public: false });
+          console.log(`[로거] '${this.bucketName}' 버킷을 생성했습니다.`);
+        }
+
+        this.bucketChecked = true;
+      }
+
+      const filePath = `${this.currentDate}/${this.logFileName}`;
+      const fullLocalContent = fs.readFileSync(localFilePath, 'utf8');
+
+      const { error } = await supabase.storage
+        .from(this.bucketName)
+        .upload(filePath, fullLocalContent, {
+          upsert: true,
+          contentType: 'text/plain',
+        });
+
+      if (error) {
+        console.error(`[로거] Supabase 업로드 실패: ${error.message}`);
+        throw error;
+      }
+
+      this.lastUploadTime = Date.now();
+      this.retryCount = 0;
+      console.log(`[로거] 로그 파일을 Supabase에 성공적으로 업로드했습니다. (${filePath})`);
+    } catch (error) {
+      console.error('[로거] Supabase 로그 업로드 실패:', error);
+      this.scheduleRetry();
+    }
+  }
+
+  // 실패한 업로드 재시도 스케줄링 (최대 3회)
   private scheduleRetry(): void {
+    this.retryCount++;
+
+    if (this.retryCount > this.maxRetries) {
+      console.error(`[로거] 최대 재시도 횟수(${this.maxRetries}회) 초과. 재시도를 중단합니다.`);
+      return;
+    }
+
     setTimeout(() => {
-      console.log('[로거] Supabase 업로드 재시도 중...');
-      
-      // 로컬 파일을 다시 읽어서 Supabase에 업로드 시도
+      console.log(`[로거] Supabase 업로드 재시도 중... (${this.retryCount}/${this.maxRetries})`);
+
       try {
         const localFilePath = path.join(this.localLogDir, this.logFileName);
         if (fs.existsSync(localFilePath)) {
           const fileContent = fs.readFileSync(localFilePath, 'utf8');
-          
-          // 비동기 호출하되 에러 처리만 추가
+
           const supabase = getSupabaseAdmin();
           supabase.storage
             .from(this.bucketName)
@@ -227,10 +243,11 @@ export class LogManager {
             .then(({ error }) => {
               if (error) {
                 console.error('[로거] 재시도 실패:', error);
-                // 다시 재시도 스케줄링
                 this.scheduleRetry();
               } else {
                 console.log('[로거] 재시도 성공: 로그 파일이 업로드되었습니다.');
+                this.lastUploadTime = Date.now();
+                this.retryCount = 0;
               }
             })
             .catch(err => {
@@ -243,14 +260,14 @@ export class LogManager {
       }
     }, 5 * 60 * 1000); // 5분 후 재시도
   }
-  
+
   // 프로세스 종료 시 로그 저장
   async shutdown(): Promise<void> {
     if (this.bufferTimer) {
       clearInterval(this.bufferTimer);
       this.bufferTimer = null;
     }
-    await this.flushLogs();
+    await this.flushLogs(true); // shutdown 시 강제 업로드
   }
 }
 

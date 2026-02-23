@@ -224,6 +224,10 @@ export async function updateSeatStats(
                   dayOfWeek,
                   hourOfDay
                 }
+              },
+              select: {
+                averageSeats: true,
+                samplesCount: true,
               }
             });
 
@@ -585,6 +589,12 @@ export async function collectBusLocationsOnce(): Promise<{
     const recentLocations = await prisma.busLocation.findMany({
       where: {
         updatedAt: { gte: now }
+      },
+      select: {
+        busRouteId: true,
+        stopId: true,
+        stopName: true,
+        remainingSeats: true,
       }
     });
     

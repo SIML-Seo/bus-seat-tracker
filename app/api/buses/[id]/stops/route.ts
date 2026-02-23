@@ -19,6 +19,16 @@ export async function GET(
       where: {
         id: busRouteId,
       },
+      select: {
+        id: true,
+        routeName: true,
+        type: true,
+        routeTypeName: true,
+        startStopName: true,
+        endStopName: true,
+        turnStationId: true,
+        turnStationName: true,
+      },
     });
     
     if (!busRoute) {
@@ -32,6 +42,14 @@ export async function GET(
     let stops = await prisma.busStop.findMany({
       where: {
         busRouteId,
+      },
+      select: {
+        busRouteId: true,
+        stationId: true,
+        stationName: true,
+        stationSeq: true,
+        x: true,
+        y: true,
       },
       orderBy: {
         stationSeq: 'asc', // 순서대로 정렬

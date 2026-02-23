@@ -29,24 +29,21 @@ export async function GET(request: NextRequest) {
       select: { updatedAt: true }
     });
     
-    // 최근 24시간 시간대별 수집량
+    // 최근 24시간 시간대별 수집량 (단일 쿼리로 조회)
+    const cutoff24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const hourlyRaw = await prisma.$queryRaw<Array<{ hour: number; count: bigint }>>`
+      SELECT EXTRACT(HOUR FROM "updatedAt")::int as hour, COUNT(*) as count
+      FROM "BusLocation"
+      WHERE "updatedAt" >= ${cutoff24h}
+      GROUP BY EXTRACT(HOUR FROM "updatedAt")
+    `;
+
+    const hourlyMap = new Map(hourlyRaw.map(r => [r.hour, Number(r.count)]));
     const hourlyStats: { hour: number; count: number }[] = [];
     for (let i = 0; i < 24; i++) {
-      const hourStart = new Date(now.getTime() - (24 - i) * 60 * 60 * 1000);
-      const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
-      
-      const count = await prisma.busLocation.count({
-        where: {
-          updatedAt: {
-            gte: hourStart,
-            lt: hourEnd
-          }
-        }
-      });
-      
       hourlyStats.push({
-        hour: hourStart.getHours(),
-        count
+        hour: i,
+        count: hourlyMap.get(i) || 0
       });
     }
     

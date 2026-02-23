@@ -16,10 +16,10 @@ export async function GET(request: NextRequest) {
     const totalRoutes = await prisma.busRoute.count();
     
     // 통계가 있는 노선 수 (BusStopSeats에 데이터가 있는 노선)
-    const routesWithStats = await prisma.busStopSeats.groupBy({
-      by: ['busRouteId'],
-    });
-    const routesWithStatsCount = routesWithStats.length;
+    const routesWithStatsResult = await prisma.$queryRaw<[{ count: bigint }]>`
+      SELECT COUNT(DISTINCT "busRouteId") as count FROM "BusStopSeats"
+    `;
+    const routesWithStatsCount = Number(routesWithStatsResult[0].count);
     
     // 노선별 커버리지: 서브쿼리로 분리하여 성능 개선
     const routeCoverage = await prisma.$queryRaw<Array<{
