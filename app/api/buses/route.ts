@@ -119,7 +119,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ busRoutes });
+    return NextResponse.json({ busRoutes }, {
+      headers: {
+        'Cache-Control': 's-maxage=86400, stale-while-revalidate=3600',
+      },
+    });
   } catch (error) {
     console.error('Error in bus search API:', error);
     return NextResponse.json({ error: '버스 검색 중 오류가 발생했습니다.' }, { status: 500 });

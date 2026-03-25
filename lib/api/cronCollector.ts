@@ -96,7 +96,8 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
               stopName: '',
               remainingSeats: location.remainSeatCnt || 0,
               updatedAt: new Date()
-            }
+            },
+            select: { id: true },
           });
         } catch (error) {
           logger.error(`버스 위치 정보 저장 오류 (노선: ${routeId}, 버스: ${location.vehId}):`, error);

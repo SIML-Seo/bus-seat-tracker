@@ -314,6 +314,10 @@ export async function GET(
     return NextResponse.json({
       busRoute,
       seatData,
+    }, {
+      headers: {
+        'Cache-Control': 's-maxage=300, stale-while-revalidate=60',
+      },
     });
   } catch (error) {
     console.error('버스 좌석 정보 조회 에러:', error);

@@ -109,6 +109,10 @@ export async function GET(
     return NextResponse.json({
       busRoute,
       stops,
+    }, {
+      headers: {
+        'Cache-Control': 's-maxage=86400, stale-while-revalidate=3600',
+      },
     });
   } catch (error) {
     console.error('버스 정류장 목록 조회 에러:', error);

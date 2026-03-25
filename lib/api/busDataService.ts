@@ -251,7 +251,8 @@ export async function updateSeatStats(
                   averageSeats: newAverage,
                   samplesCount: Math.min(effectiveOldCount + trimmedSeats.length, MAX_EFFECTIVE_SAMPLES),
                   updatedAt: now
-                }
+                },
+                select: { id: true },
               });
             } else {
               // 3. 기존 데이터가 없으면 생성
@@ -265,7 +266,8 @@ export async function updateSeatStats(
                   hourOfDay,
                   samplesCount: trimmedSeats.length,
                   updatedAt: now
-                }
+                },
+                select: { id: true },
               });
             }
           });
@@ -340,11 +342,11 @@ export async function cleanupOldData(retentionHours: number = 6): Promise<{ dele
     });
     
     logger.info(`${result.count}개의 오래된 BusLocation 데이터 삭제 완료`);
-    
+
     // 전체 데이터 카운트 로깅
     const totalCount = await prisma.busLocation.count();
     logger.info(`현재 총 ${totalCount}개의 버스 위치 데이터가 DB에 저장되어 있습니다.`);
-    
+
     return { deleted: result.count };
   } catch (error) {
     logger.error('데이터 정리 중 오류 발생:', error);
@@ -487,6 +489,7 @@ export async function collectBusLocationsOnce(): Promise<{
                         x: stop.x,
                         y: stop.y,
                       },
+                      select: { busRouteId: true },
                     });
                     // stopMap에도 추가하여 이번 수집에서 바로 사용
                     stopMap.set(`${routeId}_${stop.stationId}`, stop.stationName);
@@ -558,7 +561,8 @@ export async function collectBusLocationsOnce(): Promise<{
                     stopName,
                     remainingSeats: location.remainSeatCnt,
                     updatedAt: new Date(),
-                  }
+                  },
+                  select: { id: true },
                 });
 
                 savedCount++;
