@@ -11,6 +11,7 @@ import {
 } from './publicDataApi';
 import { BusLocation, HolidayItem } from './types';
 import { logger } from '@/lib/logging';
+import { createAsyncRunGuard } from '@/lib/utils/asyncRunGuard';
 
 // 좌석버스 타입코드 (잔여석 정보를 제공하는 버스 유형)
 const SEAT_BUS_TYPE_CODES = [11, 12, 14, 16, 17, 21, 22];
@@ -458,6 +459,7 @@ function getCollectionInterval(): number {
 // 버스별 마지막 위치를 저장할 캐시 추가 (함수 외부에서 모듈 레벨로 선언)
 // key: `${busRouteId}_${busId}`, value: { stopId: string, timestamp: Date }
 const lastBusPositionCache = new Map<string, { stopId: string, timestamp: Date, remainingSeats: number }>();
+const groupCollectionGuard = createAsyncRunGuard();
 
 // 집중 그룹의 버스 위치 정보 수집
 async function collectBusLocationsForGroup(groupName: string, routeIds: string[]): Promise<void> {
@@ -754,6 +756,18 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
   }
 }
 
+function startGroupCollectionIfIdle(groupName: string, routeIds: string[]): boolean {
+  const result = groupCollectionGuard.start(groupName, () => collectBusLocationsForGroup(groupName, routeIds));
+
+  if (!result.started) {
+    logger.warn(`${groupName} 그룹 수집이 아직 진행 중이라 이번 회차를 건너뜁니다.`);
+    return false;
+  }
+
+  result.promise.catch(error => logger.error(`${groupName} 그룹 데이터 수집 오류:`, error));
+  return true;
+}
+
 // 월별 공휴일 정보 캐시
 let currentMonthHolidays: HolidayItem[] = [];
 let lastHolidayFetchDate = ''; // 마지막으로 공휴일 정보를 가져온 날짜 (YYYY-MM-DD)
@@ -919,10 +933,10 @@ export async function startOptimizedDataCollection(): Promise<void> {
           const expectedCalls = routeIds.length;
           if (dailyApiCallCount + expectedCalls <= 10000) {
             logger.info(`${focusGroup} 그룹 데이터 수집 시작 (마지막 수집 후 ${Math.round(minutesSinceLastCollection)}분 경과)`);
-            lastCollectionTime[focusGroup] = now;
-            dailyApiCallCount += expectedCalls;
-            collectBusLocationsForGroup(focusGroup, routeIds)
-              .catch(error => logger.error(`${focusGroup} 그룹 데이터 수집 오류:`, error));
+            if (startGroupCollectionIfIdle(focusGroup, routeIds)) {
+              lastCollectionTime[focusGroup] = now;
+              dailyApiCallCount += expectedCalls;
+            }
           } else {
             logger.error(`경고: 일일 API 호출 한도(10,000)에 근접했습니다. 오늘 호출: ${dailyApiCallCount}`);
           }
@@ -947,16 +961,13 @@ export async function startOptimizedDataCollection(): Promise<void> {
           // 남은 API 호출 수가 충분한지 확인
           if (dailyApiCallCount + expectedCalls <= 10000) {
             logger.info(`주말 - ${groupName} 그룹 데이터 수집 시작 (마지막 수집 후 ${Math.round(minutesSinceLastCollection)}분 경과)`);
-            
-            // 마지막 수집 시간 업데이트
-            lastCollectionTime[groupName] = now;
-            
-            // API 호출 카운트 미리 증가
-            dailyApiCallCount += expectedCalls;
-            
-            // 데이터 수집 시작
-            collectBusLocationsForGroup(groupName, routeIds)
-              .catch(error => logger.error(`${groupName} 그룹 데이터 수집 오류:`, error));
+            if (startGroupCollectionIfIdle(groupName, routeIds)) {
+              // 마지막 수집 시간 업데이트
+              lastCollectionTime[groupName] = now;
+
+              // API 호출 카운트 미리 증가
+              dailyApiCallCount += expectedCalls;
+            }
           } else {
             logger.error(`경고: 일일 API 호출 한도(10,000)에 근접했습니다. 오늘 호출: ${dailyApiCallCount}. 그룹 ${groupName} 수집 건너뜀.`);
           }
@@ -1115,4 +1126,4 @@ export async function clearAllBusStopSeatsData(): Promise<void> {
     logger.error('BusStopSeats 테이블 데이터 삭제 중 오류 발생:', error);
     throw error;
   }
-} 
+}
