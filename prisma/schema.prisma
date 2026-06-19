@@ -76,7 +76,6 @@ model BusLocation {
 
 // 정류장별 잔여석 통계
 model BusStopSeats {
-  id               String         @id @default(uuid())
   busRouteId       String         // 버스 노선 ID
   stopId           String         // 정류장 ID
   stopName         String         // 정류장 이름
@@ -89,8 +88,7 @@ model BusStopSeats {
   // 관계
   busRoute         BusRoute       @relation(fields: [busRouteId], references: [id])
   
-  @@unique([busRouteId, stopId, dayOfWeek, hourOfDay])
-  @@index([busRouteId])
+  @@id([busRouteId, stopId, dayOfWeek, hourOfDay])
   @@index([stopId])
 }
 

@@ -252,7 +252,7 @@ export async function updateSeatStats(
                   samplesCount: Math.min(effectiveOldCount + trimmedSeats.length, MAX_EFFECTIVE_SAMPLES),
                   updatedAt: now
                 },
-                select: { id: true },
+                select: { busRouteId: true },
               });
             } else {
               // 3. 기존 데이터가 없으면 생성
@@ -267,7 +267,7 @@ export async function updateSeatStats(
                   samplesCount: trimmedSeats.length,
                   updatedAt: now
                 },
-                select: { id: true },
+                select: { busRouteId: true },
               });
             }
           });

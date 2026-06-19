@@ -74,14 +74,14 @@ export async function GET(request: NextRequest) {
     // 요일별 데이터 분포
     const dayOfWeekDistribution = await prisma.busStopSeats.groupBy({
       by: ['dayOfWeek'],
-      _count: { id: true },
+      _count: { _all: true },
       _avg: { samplesCount: true }
     });
     
     // 시간대별 데이터 분포
     const hourDistribution = await prisma.busStopSeats.groupBy({
       by: ['hourOfDay'],
-      _count: { id: true },
+      _count: { _all: true },
       _avg: { samplesCount: true }
     });
     
@@ -105,12 +105,12 @@ export async function GET(request: NextRequest) {
       })),
       dayOfWeekDistribution: dayOfWeekDistribution.map(d => ({
         dayOfWeek: d.dayOfWeek,
-        count: d._count.id,
+        count: d._count._all,
         avgSamples: d._avg.samplesCount
       })),
       hourDistribution: hourDistribution.map(h => ({
         hour: h.hourOfDay,
-        count: h._count.id,
+        count: h._count._all,
         avgSamples: h._avg.samplesCount
       }))
     });
