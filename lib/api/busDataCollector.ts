@@ -5,13 +5,13 @@ import {
   fetchBusBaseInfo, 
   fetchBusLocationAndSeats, 
   fetchRouteDetail, 
-  fetchBusStationInfo, 
   fetchRouteStations, 
   fetchHollydayInfo
 } from './publicDataApi';
 import { BusLocation, HolidayItem } from './types';
 import { logger } from '@/lib/logging';
 import { createAsyncRunGuard } from '@/lib/utils/asyncRunGuard';
+import { createRouteStopNameCache } from '@/lib/utils/routeStopNameCache';
 
 // 좌석버스 타입코드 (잔여석 정보를 제공하는 버스 유형)
 const SEAT_BUS_TYPE_CODES = [11, 12, 14, 16, 17, 21, 22];
@@ -247,6 +247,10 @@ async function updateSeatStats(statsByStopRoute: Map<string, { seats: number[]; 
                   dayOfWeek,
                   hourOfDay
                 }
+              },
+              select: {
+                averageSeats: true,
+                samplesCount: true,
               }
             });
 
@@ -270,7 +274,8 @@ async function updateSeatStats(statsByStopRoute: Map<string, { seats: number[]; 
                   averageSeats: newAverage,
                   samplesCount: Math.min(effectiveOldCount + trimmedSeats.length, MAX_EFFECTIVE_SAMPLES),
                   updatedAt: now
-                }
+                },
+                select: { busRouteId: true },
               });
             } else {
               // 3. 기존 데이터가 없으면 생성
@@ -284,7 +289,8 @@ async function updateSeatStats(statsByStopRoute: Map<string, { seats: number[]; 
                   hourOfDay,
                   samplesCount: trimmedSeats.length,
                   updatedAt: now
-                }
+                },
+                select: { busRouteId: true },
               });
             }
           });
@@ -460,6 +466,78 @@ function getCollectionInterval(): number {
 // key: `${busRouteId}_${busId}`, value: { stopId: string, timestamp: Date }
 const lastBusPositionCache = new Map<string, { stopId: string, timestamp: Date, remainingSeats: number }>();
 const groupCollectionGuard = createAsyncRunGuard();
+const STOP_NAME_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const stopNameCache = createRouteStopNameCache({
+  ttlMs: STOP_NAME_CACHE_TTL_MS,
+  loadStops: async (routeIds) => prisma.busStop.findMany({
+    where: {
+      busRouteId: { in: routeIds },
+    },
+    select: {
+      busRouteId: true,
+      stationId: true,
+      stationName: true,
+    },
+  }),
+  refreshRouteStops: async (routeId) => {
+    const stops = await fetchRouteStations(routeId);
+
+    if (stops.length === 0) {
+      return [];
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.busStop.deleteMany({
+        where: { busRouteId: routeId },
+      });
+
+      for (const stop of stops) {
+        await tx.busStop.create({
+          data: {
+            busRouteId: routeId,
+            stationId: String(stop.stationId),
+            stationName: stop.stationName,
+            stationSeq: stop.stationSeq,
+            x: stop.x,
+            y: stop.y,
+          },
+        });
+      }
+    });
+
+    logger.info(`노선 ${routeId}의 정류장 정보를 재동기화했습니다: ${stops.length}개`);
+
+    return stops.map(stop => ({
+      busRouteId: routeId,
+      stationId: String(stop.stationId),
+      stationName: stop.stationName,
+    }));
+  },
+});
+
+function addLocationToStats(
+  statsByStopRoute: Map<string, { seats: number[], busRouteId: string, stopName: string }>,
+  busRouteId: string,
+  stopId: string | null,
+  stopName: string,
+  remainingSeats: number
+): void {
+  if (!stopId || remainingSeats < 0 || remainingSeats > 48) {
+    return;
+  }
+
+  const key = `${busRouteId}_${stopId}`;
+
+  if (!statsByStopRoute.has(key)) {
+    statsByStopRoute.set(key, {
+      seats: [],
+      busRouteId,
+      stopName,
+    });
+  }
+
+  statsByStopRoute.get(key)!.seats.push(remainingSeats);
+}
 
 // 집중 그룹의 버스 위치 정보 수집
 async function collectBusLocationsForGroup(groupName: string, routeIds: string[]): Promise<void> {
@@ -477,51 +555,12 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
   
   let totalBusLocations = 0;
   let apiCallCount = 0;
+  const stopMap = await stopNameCache.getStopMap(routeIds);
+  const statsByStopRoute = new Map<string, { seats: number[], busRouteId: string, stopName: string }>();
   
   // 각 노선에 대해 버스 위치 및 잔여석 정보 조회
   for (const routeId of routeIds) {
     try {
-      // 버스 정류장 정보가 DB에 있는지 확인
-      const existingStopsCount = await prisma.busStop.count({
-        where: { busRouteId: routeId }
-      });
-      
-      // 정류장 정보가 없으면 API에서 가져와 DB에 저장
-      if (existingStopsCount === 0) {
-        logger.info(`노선 ${routeId}의 정류장 정보가 없습니다. API에서 정보를 가져옵니다.`);
-        try {
-          const stops = await fetchRouteStations(routeId);
-          
-          if (stops.length > 0) {
-            // 정류장 정보 DB에 저장
-            await Promise.all(
-              stops.map(async (stop) => {
-                try {
-                  await prisma.busStop.create({
-                    data: {
-                      busRouteId: routeId,
-                      stationId: String(stop.stationId),
-                      stationName: stop.stationName,
-                      stationSeq: stop.stationSeq,
-                      x: stop.x,
-                      y: stop.y,
-                    },
-                  });
-                } catch (error) {
-                  // 이미 존재하는 경우 등의 오류는 무시
-                  if (!(error instanceof Error && error.message.includes('Unique constraint'))) {
-                    logger.error(`정류장 저장 중 오류 발생 (노선 ${routeId}, 정류장 ${stop.stationId}):`, error);
-                  }
-                }
-              })
-            );
-            logger.info(`노선 ${routeId}의 정류장 ${stops.length}개를 DB에 저장했습니다.`);
-          }
-        } catch (error) {
-          logger.error(`노선 ${routeId}의 정류장 정보 조회 실패:`, error);
-        }
-      }
-      
       apiCallCount++; // API 호출 카운트
       const busLocations = await fetchBusLocationAndSeats(routeId);
 
@@ -571,25 +610,14 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
       // 필터링된 위치만 DB에 저장
       await Promise.all(filteredLocations.map(async (location: BusLocation) => {
         try {
-          // 정류장 ID가 있을 경우 BusStop에서 정류장 이름 조회
           let stopName: string | null = null;
+          const stopId = location.stationId ? String(location.stationId) : null;
           
-          if (location.stationId) {
-            const stopId = String(location.stationId);
-            
-            // 먼저 DB에서 정류장 정보 검색
-            const busStop = await prisma.busStop.findFirst({
-              where: {
-                busRouteId: routeId,
-                stationId: stopId
-              },
-              select: {
-                stationName: true
-              }
-            });
-            
-            if (busStop?.stationName) {
-              stopName = busStop.stationName;
+          if (stopId) {
+            stopName = stopMap.get(`${routeId}_${stopId}`) || null;
+
+            if (!stopName) {
+              stopName = await stopNameCache.resolveMissingStop(stopMap, routeId, stopId) || null;
             }
           }
           
@@ -597,13 +625,20 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
             data: {
               busRouteId: routeId,
               busId: String(location.vehId),
-              stopId: location.stationId ? String(location.stationId) : null, 
+              stopId,
               stopName,  // 찾은 정류장 이름 또는 null
               remainingSeats: location.remainSeatCnt,
               updatedAt: new Date(),
             }
           });
           
+          addLocationToStats(
+            statsByStopRoute,
+            routeId,
+            stopId,
+            stopName || '',
+            location.remainSeatCnt
+          );
           totalBusLocations++;
         } catch (error) {
           logger.error(`버스 위치 정보 저장 오류 (노선ID: ${routeId}, 버스ID: ${location.vehId}):`, error);
@@ -627,129 +662,13 @@ async function collectBusLocationsForGroup(groupName: string, routeIds: string[]
   const dayOfWeek = now.getDay(); 
   const hourOfDay = now.getHours();
   
-  // 이번 수집에서 저장한 데이터만 통계에 반영 (now 이후에 저장된 BusLocation만 대상)
-  logger.info(`통계 계산 기준 시간: 이번 수집 시작 시점(${now.toLocaleTimeString()}) 이후 데이터`);
-  
   try {
-    // 1. 최근 버스 위치 정보 가져오기
-    const recentLocations = await prisma.busLocation.findMany({
-      where: {
-        updatedAt: {
-          gte: now
-        }
-      },
-      include: {
-        busRoute: {
-          select: {
-            busStops: true
-          }
-        }
-      }
-    });
-    
-    if (recentLocations.length === 0) {
-      logger.info('최근 수집된 버스 위치 정보가 없습니다.');
+    if (statsByStopRoute.size === 0) {
+      logger.info('이번 수집에서 통계에 반영할 버스 위치 정보가 없습니다.');
       return;
     }
-    
-    logger.info(`최근 ${recentLocations.length}개의 버스 위치 데이터로 통계 계산 중...`);
-    
-    // 정류장 정보 캐시 (API 호출 최소화를 위해)
-    const stationInfoCache = new Map<string, string>();
-    
-    // 2. 정류장별로 그룹화
-    const statsByStopRoute = new Map<string, { seats: number[], busRouteId: string, stopName: string }>();
-    
-    // 정류장 정보 가져오기 (API 호출 필요시)
-    const fetchStationNameIfNeeded = async (stopId: string, busRouteId?: string): Promise<string> => {
-      // 이미 캐시에 있는 경우
-      if (stationInfoCache.has(stopId)) {
-        return stationInfoCache.get(stopId) || '';
-      }
-      
-      try {
-        // 1. 먼저 DB에서 정류장 정보 조회 시도
-        if (busRouteId) {
-          const busStop = await prisma.busStop.findFirst({
-            where: {
-              busRouteId,
-              stationId: stopId
-            },
-            select: {
-              stationName: true
-            }
-          });
-          
-          // DB에서 정보를 찾았으면 캐시에 저장하고 반환
-          if (busStop?.stationName) {
-            const stationName = busStop.stationName;
-            stationInfoCache.set(stopId, stationName);
-            return stationName;
-          }
-        }
-        
-        // 2. DB에서 찾지 못했으면 API에서 정류장 정보 가져오기
-        const stationInfo = await fetchBusStationInfo(stopId);
-        if (stationInfo && stationInfo.length > 0) {
-          const stationName = stationInfo[0].stationName || '';
-          stationInfoCache.set(stopId, stationName);
-          return stationName;
-        }
-      } catch (error) {
-        logger.error(`정류장 정보 조회 오류 (정류장 ID: ${stopId}):`, error);
-      }
-      
-      return '';
-    };
-    
-    // 모든 위치 데이터 처리
-    for (const location of recentLocations) {
-      // 유효한 데이터만 사용 (stopId가 있고, 잔여석이 0-48 범위 내인 경우만)
-      if (location.stopId && location.remainingSeats >= 0 && location.remainingSeats <= 48) {
-        const key = `${location.busRouteId}_${location.stopId}`;
-        
-        if (!statsByStopRoute.has(key)) {
-          // 정류장 이름 찾기
-          let stopName = location.stopName || '';
-          
-          if (!stopName && location.busRoute?.busStops) {
-            const stop = location.busRoute.busStops.find(s => s.stationId === location.stopId);
-            stopName = stop?.stationName || '';
-          }
-          
-          // 여전히 stopName이 없는 경우 API에서 가져오기
-          if (!stopName && location.stopId) {
-            stopName = await fetchStationNameIfNeeded(location.stopId, location.busRouteId);
-            
-            // 정류장 이름을 찾았으면 DB 업데이트
-            if (stopName) {
-              try {
-                // 해당 위치 레코드 업데이트
-                await prisma.busLocation.update({
-                  where: { id: location.id },
-                  data: { stopName }
-                });
-                logger.info(`정류장 이름 업데이트: ${location.stopId} -> ${stopName}`);
-              } catch (error) {
-                logger.error(`버스 위치 정보 업데이트 오류 (ID: ${location.id}):`, error);
-              }
-            }
-          }
-          
-          statsByStopRoute.set(key, {
-            seats: [],
-            busRouteId: location.busRouteId,
-            stopName
-          });
-        }
-        
-        statsByStopRoute.get(key)!.seats.push(location.remainingSeats);
-      } else {
-        logger.info(`유효하지 않은 데이터 건너뜀: 노선(${location.busRouteId}), 정류장(${location.stopId}), 잔여석(${location.remainingSeats})`);
-      }
-    }
-    
-    // 3. 통계 데이터 업데이트
+
+    logger.info(`이번 수집에서 저장한 ${totalBusLocations}개의 버스 위치 데이터로 통계 계산 중...`);
     await updateSeatStats(statsByStopRoute, dayOfWeek, hourOfDay);
   } catch (error) {
     logger.error('버스 위치 데이터 처리 및 통계 업데이트 오류:', error);
@@ -983,6 +902,8 @@ export async function startOptimizedDataCollection(): Promise<void> {
     if (now.getDay() === 0 && now.getHours() === 3 && now.getMinutes() === 0) {
       logger.info('매주 일요일 오전 3시 버스 노선 정보 갱신 시작...');
       await collectAllSeatBusRoutes();
+      stopNameCache.invalidateAll();
+      logger.info('노선 정보 갱신 후 정류장 이름 캐시를 초기화했습니다.');
     }
   }, 60 * 60 * 1000); // 1시간마다 체크
   
