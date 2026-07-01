@@ -11,6 +11,7 @@ import {
 import { BusLocation, HolidayItem } from './types';
 import { logger } from '@/lib/logging';
 import { createAsyncRunGuard } from '@/lib/utils/asyncRunGuard';
+import { dedupeRouteStationsByStationId } from '@/lib/utils/routeStationDedup';
 import { createRouteStopNameCache } from '@/lib/utils/routeStopNameCache';
 
 // 좌석버스 타입코드 (잔여석 정보를 제공하는 버스 유형)
@@ -144,36 +145,32 @@ export async function collectAllSeatBusRoutes(): Promise<void> {
             const stops = await fetchRouteStations(routeData.id);
             
             if (stops.length > 0) {
+              const uniqueStops = dedupeRouteStationsByStationId(stops);
+
+              if (uniqueStops.length !== stops.length) {
+                logger.warn(`노선 ${routeData.id}의 정류장 정보에서 중복 stationId ${stops.length - uniqueStops.length}개를 제거했습니다.`);
+              }
+
               // 기존 정류장 정보 삭제 (새로 갱신)
               if (stopsCount > 0) {
                 await prisma.busStop.deleteMany({
                   where: { busRouteId: routeData.id }
                 });
               }
-              
+
               // 정류장 정보 DB에 저장
-              let savedCount = 0;
-              for (const stop of stops) {
-                try {
-                  await prisma.busStop.create({
-                    data: {
-                      busRouteId: routeData.id,
-                      stationId: String(stop.stationId),
-                      stationName: stop.stationName,
-                      stationSeq: stop.stationSeq,
-                      x: stop.x,
-                      y: stop.y,
-                    },
-                  });
-                  savedCount++;
-                } catch (error) {
-                  // 중복 오류 등은 무시
-                  if (!(error instanceof Error && error.message.includes('Unique constraint'))) {
-                    logger.error(`정류장 저장 중 오류 발생 (노선 ${routeData.id}, 정류장 ${stop.stationId}):`, error);
-                  }
-                }
-              }
-              logger.info(`노선 ${routeData.id}의 정류장 ${savedCount}/${stops.length}개를 DB에 저장했습니다.`);
+              const result = await prisma.busStop.createMany({
+                data: uniqueStops.map(stop => ({
+                  busRouteId: routeData.id,
+                  stationId: String(stop.stationId),
+                  stationName: stop.stationName,
+                  stationSeq: stop.stationSeq,
+                  x: stop.x,
+                  y: stop.y,
+                })),
+                skipDuplicates: true,
+              });
+              logger.info(`노선 ${routeData.id}의 정류장 ${result.count}/${stops.length}개를 DB에 저장했습니다.`);
             }
           } catch (error) {
             logger.error(`노선 ${routeData.id}의 정류장 정보 조회 실패:`, error);
@@ -188,6 +185,23 @@ export async function collectAllSeatBusRoutes(): Promise<void> {
   } catch (error) {
     logger.error('좌석버스 정보 수집 오류:', error);
   }
+}
+
+function createDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+let lastApiLimitWarningDateKey = '';
+
+function warnApiLimitOncePerDay(now: Date, dailyApiCallCount: number, suffix = ''): void {
+  const dateKey = createDateKey(now);
+
+  if (lastApiLimitWarningDateKey === dateKey) {
+    return;
+  }
+
+  lastApiLimitWarningDateKey = dateKey;
+  logger.warn(`일일 API 호출 한도(10,000)에 근접했습니다. 오늘 호출: ${dailyApiCallCount}${suffix}`);
 }
 
 // 버스 타입 코드에 따른 이름 반환
@@ -486,28 +500,33 @@ const stopNameCache = createRouteStopNameCache({
       return [];
     }
 
+    const uniqueStops = dedupeRouteStationsByStationId(stops);
+
+    if (uniqueStops.length !== stops.length) {
+      logger.warn(`노선 ${routeId}의 정류장 재동기화에서 중복 stationId ${stops.length - uniqueStops.length}개를 제거했습니다.`);
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.busStop.deleteMany({
         where: { busRouteId: routeId },
       });
 
-      for (const stop of stops) {
-        await tx.busStop.create({
-          data: {
-            busRouteId: routeId,
-            stationId: String(stop.stationId),
-            stationName: stop.stationName,
-            stationSeq: stop.stationSeq,
-            x: stop.x,
-            y: stop.y,
-          },
-        });
-      }
+      await tx.busStop.createMany({
+        data: uniqueStops.map(stop => ({
+          busRouteId: routeId,
+          stationId: String(stop.stationId),
+          stationName: stop.stationName,
+          stationSeq: stop.stationSeq,
+          x: stop.x,
+          y: stop.y,
+        })),
+        skipDuplicates: true,
+      });
     });
 
-    logger.info(`노선 ${routeId}의 정류장 정보를 재동기화했습니다: ${stops.length}개`);
+    logger.info(`노선 ${routeId}의 정류장 정보를 재동기화했습니다: ${uniqueStops.length}/${stops.length}개`);
 
-    return stops.map(stop => ({
+    return uniqueStops.map(stop => ({
       busRouteId: routeId,
       stationId: String(stop.stationId),
       stationName: stop.stationName,
@@ -857,7 +876,7 @@ export async function startOptimizedDataCollection(): Promise<void> {
               dailyApiCallCount += expectedCalls;
             }
           } else {
-            logger.error(`경고: 일일 API 호출 한도(10,000)에 근접했습니다. 오늘 호출: ${dailyApiCallCount}`);
+            warnApiLimitOncePerDay(now, dailyApiCallCount);
           }
         }
       }
@@ -888,7 +907,7 @@ export async function startOptimizedDataCollection(): Promise<void> {
               dailyApiCallCount += expectedCalls;
             }
           } else {
-            logger.error(`경고: 일일 API 호출 한도(10,000)에 근접했습니다. 오늘 호출: ${dailyApiCallCount}. 그룹 ${groupName} 수집 건너뜀.`);
+            warnApiLimitOncePerDay(now, dailyApiCallCount, `. 그룹 ${groupName} 수집 건너뜀.`);
           }
         }
       }

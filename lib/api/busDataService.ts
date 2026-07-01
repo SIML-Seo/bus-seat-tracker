@@ -7,6 +7,7 @@ import { fetchBusLocationAndSeats, fetchHollydayInfo, fetchRouteStations } from 
 import { collectAllSeatBusRoutes } from './busDataCollector';
 import { HolidayItem } from './types';
 import { logger } from '@/lib/logging';
+import { dedupeRouteStationsByStationId } from '@/lib/utils/routeStationDedup';
 
 // 월별 공휴일 정보 캐시
 let currentMonthHolidays: HolidayItem[] = [];
@@ -477,30 +478,29 @@ export async function collectBusLocationsOnce(): Promise<{
               const stops = await fetchRouteStations(routeId);
 
               if (stops.length > 0) {
-                // 정류장 정보 DB에 저장
-                for (const stop of stops) {
-                  try {
-                    await prisma.busStop.create({
-                      data: {
-                        busRouteId: routeId,
-                        stationId: String(stop.stationId),
-                        stationName: stop.stationName,
-                        stationSeq: stop.stationSeq,
-                        x: stop.x,
-                        y: stop.y,
-                      },
-                      select: { busRouteId: true },
-                    });
-                    // stopMap에도 추가하여 이번 수집에서 바로 사용
-                    stopMap.set(`${routeId}_${stop.stationId}`, stop.stationName);
-                  } catch (error) {
-                    // 이미 존재하는 경우 등의 오류는 무시
-                    if (!(error instanceof Error && error.message.includes('Unique constraint'))) {
-                      logger.error(`정류장 저장 중 오류 발생 (노선 ${routeId}, 정류장 ${stop.stationId}):`, error);
-                    }
-                  }
+                const uniqueStops = dedupeRouteStationsByStationId(stops);
+
+                if (uniqueStops.length !== stops.length) {
+                  logger.warn(`노선 ${routeId}의 정류장 정보에서 중복 stationId ${stops.length - uniqueStops.length}개를 제거했습니다.`);
                 }
-                logger.info(`노선 ${routeId}의 정류장 ${stops.length}개를 DB에 저장했습니다.`);
+
+                // 정류장 정보 DB에 저장
+                await prisma.busStop.createMany({
+                  data: uniqueStops.map(stop => ({
+                    busRouteId: routeId,
+                    stationId: String(stop.stationId),
+                    stationName: stop.stationName,
+                    stationSeq: stop.stationSeq,
+                    x: stop.x,
+                    y: stop.y,
+                  })),
+                  skipDuplicates: true,
+                });
+
+                for (const stop of uniqueStops) {
+                  stopMap.set(`${routeId}_${stop.stationId}`, stop.stationName);
+                }
+                logger.info(`노선 ${routeId}의 정류장 ${uniqueStops.length}/${stops.length}개를 DB에 저장했습니다.`);
               }
             } catch (error) {
               logger.error(`노선 ${routeId}의 정류장 정보 조회 실패:`, error);
