@@ -1,10 +1,10 @@
 /** @type {import('next-sitemap').IConfig} */
 module.exports = {
-  siteUrl: 'https://busseatstracker.vercel.app',
+  siteUrl: 'https://bus-seat-tracker.vercel.app',
   generateRobotsTxt: true,
   robotsTxtOptions: {
     additionalSitemaps: [
-      'https://busseatstracker.vercel.app/sitemap.xml',
+      'https://bus-seat-tracker.vercel.app/sitemap.xml',
     ],
     policies: [
       {

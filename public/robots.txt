@@ -3,7 +3,7 @@ User-agent: *
 Allow: /
 
 # Host
-Host: https://busseatstracker.vercel.app
+Host: https://bus-seat-tracker.vercel.app
 
 # Sitemaps
-Sitemap: https://busseatstracker.vercel.app/sitemap.xml
+Sitemap: https://bus-seat-tracker.vercel.app/sitemap.xml

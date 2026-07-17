@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "좌석 버스 잔여석 통계",
     description: "좌석 버스 번호를 검색하여 시간대별 정류장 잔여석을 확인하세요. 평일/주말 통계 및 실시간 데이터 제공.",
-    url: "https://busseatstracker.vercel.app/",
+    url: "https://bus-seat-tracker.vercel.app/",
     siteName: "좌석 버스 잔여석 통계",
     locale: "ko_KR",
     type: "website",
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
     initialScale: 1,
   },
   applicationName: "좌석 버스 잔여석 통계",
-  metadataBase: new URL("https://busseatstracker.vercel.app"),
+  metadataBase: new URL("https://bus-seat-tracker.vercel.app"),
 };
 
 export default function RootLayout({

@@ -5,7 +5,7 @@
 경기도 좌석 버스의 시간대별/정류장별 잔여석 통계를 제공하는 웹 서비스.
 공공데이터포털 API를 통해 주기적으로 버스 위치 및 잔여석 데이터를 수집하여 평균 잔여석 통계를 제공한다.
 
-- **Production URL**: https://busseatstracker.vercel.app
+- **Production URL**: https://bus-seat-tracker.vercel.app
 - **Deployment**: Vercel
 
 ## Tech Stack

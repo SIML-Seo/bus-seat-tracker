@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = 'https://busseatstracker.vercel.app'
+  const baseUrl = 'https://bus-seat-tracker.vercel.app'
 
   const staticPages: MetadataRoute.Sitemap = [
     {
