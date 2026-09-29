@@ -19,8 +19,10 @@ export async function GET(request: NextRequest) {
     // DB에서 검색
     let busRoutes = await prisma.busRoute.findMany({
       where: {
+        // M/G 등 영문 노선을 소문자로 입력해도 찾을 수 있도록 대소문자를 구분하지 않는다. (PostgreSQL ILIKE)
         routeName: {
-          contains: busNumber
+          contains: busNumber,
+          mode: 'insensitive'
         }
       },
       select: {

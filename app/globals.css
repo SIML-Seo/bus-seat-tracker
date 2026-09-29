@@ -2,20 +2,127 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * 색은 의미 토큰으로 관리한다. 컴포넌트는 토큰 클래스(bg-surface, text-ink 등)만 쓰고,
+ * 다크 모드는 아래 미디어 쿼리에서 토큰 값만 바꾼다.
+ *
+ * body의 --background/--foreground는 라이트로 고정한다.
+ * 관리자·디버그 화면은 아직 밝은 색을 직접 지정하고 있어, body 글자색이 바뀌면 흰 배경 위에서 읽을 수 없게 된다.
+ * 토큰을 쓰는 화면은 최상위 요소에 .app-theme과 bg-canvas를 붙여 자체 배경을 칠한다.
+ */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* 바탕·표면 */
+  --canvas: #eff1f4;       /* 가운데 본문 바깥 */
+  --surface: #ffffff;      /* 본문 */
+  --subtle: #f6f7f9;       /* 옅은 채움 (행 hover, 보조 패널) */
+  --sunken: #eceff3;       /* 트랙·빈칸 */
+  --line: #e1e5ea;         /* 테두리·구분선 */
+  --line-strong: #cbd2db;  /* 입력칸 테두리 */
+
+  /* 글자 */
+  --ink: #141a22;
+  --ink-soft: #364152;
+  --muted: #5d6978;
+  --faint: #7d8795;
+
+  /* 강조 (버튼·선택 상태) */
+  --accent: #2451d6;
+  --accent-strong: #1c43b5;
+  --accent-soft: #e8eefc;
+  --accent-muted: #9fb5ef;
+  --accent-ink: #ffffff;
+
+  /* 상태 */
+  --danger: #c3302f;
+  --danger-soft: #fdeeee;
+  --danger-line: #f3c4c4;
+  --warning: #8a6100;
+  --warning-soft: #fff6dc;
+  --warning-line: #f0dca0;
+  --success: #1a7f4b;
+
+  /* 노선·전광판·잔여석 등급 */
+  --route: #d22b3b;
+  --route-ink: #d22b3b;    /* 노선색 글자 (회차 표시) */
+  --led-bg: #111317;
+  --led: #ffb31f;
+  --led-dim: #a8843a;
+  --seat-plenty: #1d9b60;
+  --seat-ok: #c7a200;
+  --seat-low: #e27822;
+  --seat-crit: #d53a3a;
+  --seat-none: #cdd3dc;
+  /* 등급 글자색: 막대색 그대로는 작은 글자에서 대비가 4.5:1에 못 미쳐 더 진하게 둔다. */
+  --seat-plenty-ink: #15804f;
+  --seat-low-ink: #b8570f;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --canvas: #0b0f14;
+    --surface: #12171e;
+    --subtle: #19202a;
+    --sunken: #212935;
+    --line: #29323e;
+    --line-strong: #3a4553;
+
+    --ink: #e6eaf0;
+    --ink-soft: #c5cdd8;
+    --muted: #98a3b3;
+    --faint: #6d7888;
+
+    --accent: #7695ff;
+    --accent-strong: #93acff;
+    --accent-soft: #1c2645;
+    --accent-muted: #3e5290;
+    --accent-ink: #0b0f14;
+
+    --danger: #ff8a80;
+    --danger-soft: #3a1c1d;
+    --danger-line: #6b2f30;
+    --warning: #e8c25a;
+    --warning-soft: #33290f;
+    --warning-line: #5e4c1c;
+    --success: #5ad394;
+
+    /* 배지 흰 글자 대비(4.2:1)를 위해 배경용 노선색은 조금 어둡게, 글자용은 밝게 둔다. */
+    --route: #e0404f;
+    --route-ink: #f0525f;
+    /* 전광판은 두 테마 모두 어두운 패널. 다크에서는 본문보다 한 단계 더 어둡게 해 구분한다. */
+    --led-bg: #06080a;
+    --seat-plenty: #33c17f;
+    --seat-ok: #d9b92c;
+    --seat-low: #f08d3a;
+    --seat-crit: #f25c5c;
+    --seat-none: #3a4350;
+    --seat-plenty-ink: #33c17f;
+    --seat-low-ink: #f08d3a;
   }
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer components {
+  /* 토큰을 쓰는 화면의 최상위 요소. 입력칸·스크롤바 같은 기본 컨트롤도 테마를 따르게 한다. */
+  .app-theme {
+    color-scheme: light;
+    color: var(--ink);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .app-theme {
+      color-scheme: dark;
+    }
+  }
+
+  /* 측정 횟수가 적은 값: 막대에 표면색 빗금을 얹어 신뢰도가 낮음을 표시한다. */
+  .seat-bar-thin {
+    background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--surface) 3px 5px);
+  }
 }
