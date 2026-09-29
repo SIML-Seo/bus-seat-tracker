@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { DotGothic16, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
+import { GA_MEASUREMENT_ID } from "./_shared/analytics";
+import { PageViewTracker } from "./_shared/PageViewTracker";
 
 // 본문 글꼴 Pretendard는 Google Fonts에 없어 공식 CDN의 dynamic subset을 쓴다.
 // 한글을 92개 unicode-range 조각으로 나눠 화면에 쓰인 글자 조각만 받는다. (전체 파일 약 2MB를 받지 않도록)
@@ -70,7 +72,7 @@ export default function RootLayout({
         {/* Google Analytics */}
         <Script
           strategy="afterInteractive"
-          src="https://www.googletagmanager.com/gtag/js?id=G-V8BPEY011T"
+          src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
         />
         <Script
           id="google-analytics"
@@ -80,10 +82,12 @@ export default function RootLayout({
               window.dataLayer = window.dataLayer || [];
               function gtag(){dataLayer.push(arguments);}
               gtag('js', new Date());
-              gtag('config', 'G-V8BPEY011T');
+              gtag('config', '${GA_MEASUREMENT_ID}');
             `,
           }}
         />
+        {/* 첫 로드 이후의 화면 이동은 여기서 page_view를 보낸다. (주소 쿼리만 바뀌는 조건 변경은 세지 않음) */}
+        <PageViewTracker />
         {children}
       </body>
     </html>
