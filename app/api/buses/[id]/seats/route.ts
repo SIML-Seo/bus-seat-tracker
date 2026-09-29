@@ -61,6 +61,10 @@ export async function GET(
         routeTypeName: true,
         startStopName: true,
         endStopName: true,
+        // 상세 화면이 상행/하행 분리(회차 정류장)와 운수 회사 표시에 사용한다. select 축소 시 누락 주의.
+        turnStationId: true,
+        turnStationName: true,
+        company: true,
       },
     });
     
