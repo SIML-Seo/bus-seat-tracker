@@ -8,22 +8,24 @@ import {
   getSeatLevel,
   toSeatRatio,
 } from '@/app/_shared/seat-level';
-import { getStopKey, type BusStop, type BusStopSeat, type SeatStat } from '../_lib/bus-detail';
+import { getStopKey, getStopRowId, type BusStop, type BusStopSeat, type SeatStat } from '../_lib/bus-detail';
 import type { DirectionView, HeatmapCell } from '../_hooks/useBusDetailController';
 import { StationName, splitStationName } from '@/app/_shared/route-display';
 import { StationHeatmap } from './StationHeatmap';
 
 interface StopRowProps {
+  rowId: string;
   stop: BusStop;
   stat?: SeatStat;
   isFirst: boolean;
   isLast: boolean;
   isOpen: boolean;
+  isHighlighted: boolean;
   onToggle: () => void;
   children?: React.ReactNode;
 }
 
-const StopRow = ({ stop, stat, isFirst, isLast, isOpen, onToggle, children }: StopRowProps) => {
+const StopRow = ({ rowId, stop, stat, isFirst, isLast, isOpen, isHighlighted, onToggle, children }: StopRowProps) => {
   const panelId = `stop-panel-${stop.stationId}-${stop.stationSeq}`;
   const level = stat ? getSeatLevel(stat.averageSeats) : null;
   const isThin = stat !== undefined && stat.samplesCount < LOW_SAMPLE_THRESHOLD;
@@ -31,7 +33,8 @@ const StopRow = ({ stop, stat, isFirst, isLast, isOpen, onToggle, children }: St
   const railClass = isFirst && isLast ? 'hidden' : isFirst ? 'top-[14px] bottom-0' : isLast ? 'top-0 h-[14px]' : 'inset-y-0';
 
   return (
-    <li>
+    // 검색으로 이동한 정류장은 잠시 배경색으로 강조한다.
+    <li id={rowId} className={`transition-colors duration-700 ${isHighlighted ? 'bg-accent-soft' : ''}`}>
       <button
         type="button"
         aria-expanded={isOpen}
@@ -107,6 +110,7 @@ interface Props {
   stopsMessage?: string;
   stopStats: Map<string, SeatStat>;
   openStop: string | null;
+  highlightedStop: string | null;
   seatData: BusStopSeat[];
   days: number[];
   hour: number | null;
@@ -121,6 +125,7 @@ export const StopList = ({
   stopsMessage,
   stopStats,
   openStop,
+  highlightedStop,
   seatData,
   days,
   hour,
@@ -152,11 +157,13 @@ export const StopList = ({
               return (
                 <StopRow
                   key={`${stop.stationId}-${stop.stationSeq}`}
+                  rowId={getStopRowId(stopKey)}
                   stop={stop}
                   stat={stopStats.get(stop.stationId)}
                   isFirst={index === 0}
                   isLast={index === direction.stops.length - 1}
                   isOpen={isOpen}
+                  isHighlighted={highlightedStop === stopKey}
                   onToggle={() => onToggleStop(stopKey)}
                 >
                   {isOpen && (

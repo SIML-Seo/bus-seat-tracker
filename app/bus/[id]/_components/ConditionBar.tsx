@@ -12,7 +12,7 @@ interface Props {
   onToggleAllDay: () => void;
 }
 
-// 요일 묶음 + 시간대 조건. 스크롤해도 화면 위에 붙어 있어 노선도를 보면서 조건을 바꿀 수 있다.
+// 요일 묶음 + 시간대 조건. 페이지가 정류장 검색과 함께 화면 위에 붙여 두어 노선도를 보면서 조건을 바꿀 수 있다.
 // 시간 선택기의 막대 높이는 그 시간대의 노선 전체 평균 잔여석이라, 누르기 전에 여유로운 시간대가 보인다.
 export const ConditionBar = ({
   dayGroup,
@@ -24,7 +24,7 @@ export const ConditionBar = ({
   onSelectHour,
   onToggleAllDay,
 }: Props) => (
-  <div className="sticky top-0 z-10 grid gap-2 border-y border-line bg-surface px-3 pb-2 pt-2.5">
+  <div className="grid gap-2 px-3 pb-2 pt-2.5">
     <div role="group" aria-label="요일" className="grid grid-cols-4 gap-1 rounded-lg border border-line bg-subtle p-[3px]">
       {DAY_GROUPS.map(group => {
         const isActive = group.key === dayGroup;

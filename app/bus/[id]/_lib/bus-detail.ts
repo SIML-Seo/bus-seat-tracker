@@ -147,6 +147,9 @@ export const buildSeatsQueryString = (days: number[]) => {
 // 펼친 정류장 행 식별자. 같은 정류장이 양방향에 모두 나올 수 있어 순번까지 포함한다.
 export const getStopKey = (stop: BusStop) => `${stop.stationId}-${stop.stationSeq}`;
 
+// 노선도 정류장 행의 DOM id (검색으로 고른 정류장으로 스크롤할 때 쓴다)
+export const getStopRowId = (stopKey: string) => `stop-row-${stopKey}`;
+
 // ---------- 표기 ----------
 
 // ---------- 통계 계산 ----------

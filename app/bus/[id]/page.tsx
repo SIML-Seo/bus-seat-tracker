@@ -4,10 +4,12 @@ import { Suspense } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useBusDetailController } from './_hooks/useBusDetailController';
+import { useStopFocus } from './_hooks/useStopFocus';
 import { RouteBadge, StationName } from '@/app/_shared/route-display';
 import { BisSummary } from './_components/BisSummary';
 import { ConditionBar } from './_components/ConditionBar';
 import { StopList } from './_components/StopList';
+import { StopSearch } from './_components/StopSearch';
 
 const LoadingScreen = () => (
   <div className="app-theme flex min-h-screen items-center justify-center bg-canvas">
@@ -32,6 +34,7 @@ const BusDetail = () => {
   const params = useParams();
   const busId = params.id as string;
   const { view, state, handlers } = useBusDetailController(busId);
+  const { stickyRef, highlightedStop, focusStop } = useStopFocus();
 
   if (view.status === 'loading') return <LoadingScreen />;
 
@@ -45,6 +48,12 @@ const BusDetail = () => {
 
   const { data } = view;
   const { busRoute } = data;
+
+  // 검색에서 고른 정류장을 펼치고 그 자리로 이동한다.
+  const selectSearchedStop = (stopKey: string) => {
+    handlers.showStop(stopKey);
+    focusStop(stopKey);
+  };
 
   return (
     <div className="app-theme min-h-screen bg-canvas">
@@ -80,22 +89,29 @@ const BusDetail = () => {
           directions={data.directions}
         />
 
-        <ConditionBar
-          dayGroup={state.dayGroup}
-          todayGroup={state.todayGroup}
-          hour={state.hour}
-          hourlyStats={data.hourlyStats}
-          isRefreshing={state.isRefreshing}
-          onSelectDayGroup={handlers.selectDayGroup}
-          onSelectHour={handlers.selectHour}
-          onToggleAllDay={handlers.toggleAllDay}
-        />
+        {/* 조건 바와 정류장 검색은 스크롤해도 화면 위에 붙어 있다. */}
+        <div ref={stickyRef} className="sticky top-0 z-10 border-y border-line bg-surface">
+          <ConditionBar
+            dayGroup={state.dayGroup}
+            todayGroup={state.todayGroup}
+            hour={state.hour}
+            hourlyStats={data.hourlyStats}
+            isRefreshing={state.isRefreshing}
+            onSelectDayGroup={handlers.selectDayGroup}
+            onSelectHour={handlers.selectHour}
+            onToggleAllDay={handlers.toggleAllDay}
+          />
+          {data.directions.length > 0 && (
+            <StopSearch directions={data.directions} stopStats={data.stopStats} onSelectStop={selectSearchedStop} />
+          )}
+        </div>
 
         <StopList
           directions={data.directions}
           stopsMessage={data.stopsMessage}
           stopStats={data.stopStats}
           openStop={state.openStop}
+          highlightedStop={highlightedStop}
           seatData={data.seatData}
           days={state.days}
           hour={state.hour}
@@ -110,6 +126,7 @@ const BusDetail = () => {
             <li>잔여석은 수집된 값을 측정 횟수로 가중 평균한 값이며, 실시간 정보와 다를 수 있습니다.</li>
             <li>측정이 3회 미만인 값은 빗금으로 표시하고, 전광판 요약 판단에서는 뺍니다.</li>
             <li>정류장을 누르면 요일·시간대별 표가 펼쳐집니다. 조건은 주소에 저장되어 공유할 수 있습니다.</li>
+            <li>위쪽 검색창에 정류장 이름이나 초성(예: ㅅㄷㅇ)을 입력하면 그 정류장으로 바로 이동합니다.</li>
           </ul>
         </footer>
       </main>

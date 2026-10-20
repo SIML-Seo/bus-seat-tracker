@@ -118,6 +118,12 @@ export const useBusDetailController = (busId: string) => {
     setPickedCell(null);
   };
 
+  // 검색에서 고른 정류장을 펼친다. 이미 펼쳐져 있어도 접지 않는다.
+  const showStop = (stopKey: string) => {
+    updateCondition({ openStop: stopKey });
+    setPickedCell(null);
+  };
+
   const pickCell = (cell: HeatmapCell) => {
     setPickedCell(cell);
   };
@@ -169,6 +175,7 @@ export const useBusDetailController = (busId: string) => {
       selectHour,
       toggleAllDay,
       toggleStop,
+      showStop,
       pickCell,
     },
   };
