@@ -181,7 +181,7 @@ DEBUG=                      # 'true' 또는 '1'로 설정 시 디버그 모드
 - **API 응답**: `NextResponse.json()` 사용
 - **Client Components**: `'use client'` 지시자 명시
 - **Data Fetching**: 클라이언트 측은 SWR, 서버 측은 직접 Prisma 호출
-- **Vercel Config**: cron 함수에 1024MB 메모리 할당
+- **Vercel Config**: 함수는 서울(icn1)에서 실행, cron 함수에 1024MB 메모리 할당
 
 ## External APIs
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma/client';
 import { fetchBusLocationAndSeats, fetchRouteStations, fetchBusStationInfo } from '@/lib/api/publicDataApi';
 import { BusStop } from '@prisma/client';
+import { STATS_CACHE_CONTROL } from '@/lib/utils/cacheControl';
 
 // 개발 환경인지 확인
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -49,50 +50,52 @@ export async function GET(
       whereCondition.stopId = stopIdParam;
     }
     
-    // 버스 노선 정보와 정류장별 좌석 데이터 조회
-    const busRoute = await prisma.busRoute.findUnique({
-      where: {
-        id: busRouteId,
-      },
-      select: {
-        id: true,
-        routeName: true,
-        type: true,
-        routeTypeName: true,
-        startStopName: true,
-        endStopName: true,
-        // 상세 화면이 상행/하행 분리(회차 정류장)와 운수 회사 표시에 사용한다. select 축소 시 누락 주의.
-        turnStationId: true,
-        turnStationName: true,
-        company: true,
-      },
-    });
-    
+    // 버스 노선 정보와 정류장별 좌석 데이터를 동시에 조회한다. (DB 왕복을 한 번으로 줄인다)
+    const [busRoute, savedSeatData] = await Promise.all([
+      prisma.busRoute.findUnique({
+        where: {
+          id: busRouteId,
+        },
+        select: {
+          id: true,
+          routeName: true,
+          type: true,
+          routeTypeName: true,
+          startStopName: true,
+          endStopName: true,
+          // 상세 화면이 상행/하행 분리(회차 정류장)와 운수 회사 표시에 사용한다. select 축소 시 누락 주의.
+          turnStationId: true,
+          turnStationName: true,
+          company: true,
+        },
+      }),
+      prisma.busStopSeats.findMany({
+        where: whereCondition,
+        select: {
+          busRouteId: true,
+          stopId: true,
+          stopName: true,
+          averageSeats: true,
+          dayOfWeek: true,
+          hourOfDay: true,
+          samplesCount: true,
+        },
+        orderBy: [
+          { dayOfWeek: 'asc' },
+          { hourOfDay: 'asc' },
+          { stopName: 'asc' },
+        ],
+      }),
+    ]);
+
     if (!busRoute) {
       return NextResponse.json(
         { error: '해당 버스 노선을 찾을 수 없습니다.' },
         { status: 404 }
       );
     }
-    
-    // 정류장별 좌석 데이터 조회
-    let seatData = await prisma.busStopSeats.findMany({
-      where: whereCondition,
-      select: {
-        busRouteId: true,
-        stopId: true,
-        stopName: true,
-        averageSeats: true,
-        dayOfWeek: true,
-        hourOfDay: true,
-        samplesCount: true,
-      },
-      orderBy: [
-        { dayOfWeek: 'asc' },
-        { hourOfDay: 'asc' },
-        { stopName: 'asc' },
-      ],
-    });
+
+    let seatData = savedSeatData;
     
     // 정류장 이름이 없는 항목 찾기 및 업데이트
     const stationInfoCache = new Map<string, string>();
@@ -320,7 +323,7 @@ export async function GET(
       seatData,
     }, {
       headers: {
-        'Cache-Control': 's-maxage=300, stale-while-revalidate=60',
+        'Cache-Control': STATS_CACHE_CONTROL,
       },
     });
   } catch (error) {

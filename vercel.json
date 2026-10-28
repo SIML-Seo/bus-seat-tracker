@@ -1,7 +1,8 @@
 {
+  "regions": ["icn1"],
   "functions": {
     "app/api/cron/**/*": {
       "memory": 1024
     }
   }
-} 
+}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma/client';
 import { fetchBusRoutes, fetchRouteStations, fetchRouteDetail } from '@/lib/api/publicDataApi';
 import { BusRouteInfo, BusRouteList, BusStation } from '@/lib/api/types';
+import { ROUTE_INFO_CACHE_CONTROL } from '@/lib/utils/cacheControl';
 
 // 개발 환경인지 확인
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -123,7 +124,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ busRoutes }, {
       headers: {
-        'Cache-Control': 's-maxage=86400, stale-while-revalidate=3600',
+        'Cache-Control': ROUTE_INFO_CACHE_CONTROL,
       },
     });
   } catch (error) {

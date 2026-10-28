@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma/client';
 import { fetchRouteStations } from '@/lib/api/publicDataApi';
 import { BusStop } from '@prisma/client';
+import { ROUTE_INFO_CACHE_CONTROL } from '@/lib/utils/cacheControl';
 
 // 개발 환경인지 확인
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -14,48 +15,50 @@ export async function GET(
   try {
     const { id: busRouteId } = await params;
     
-    // 버스 노선 정보 조회
-    const busRoute = await prisma.busRoute.findUnique({
-      where: {
-        id: busRouteId,
-      },
-      select: {
-        id: true,
-        routeName: true,
-        type: true,
-        routeTypeName: true,
-        startStopName: true,
-        endStopName: true,
-        turnStationId: true,
-        turnStationName: true,
-      },
-    });
-    
+    // 버스 노선 정보와 정류장 목록을 동시에 조회한다. (DB 왕복을 한 번으로 줄인다)
+    const [busRoute, savedStops] = await Promise.all([
+      prisma.busRoute.findUnique({
+        where: {
+          id: busRouteId,
+        },
+        select: {
+          id: true,
+          routeName: true,
+          type: true,
+          routeTypeName: true,
+          startStopName: true,
+          endStopName: true,
+          turnStationId: true,
+          turnStationName: true,
+        },
+      }),
+      prisma.busStop.findMany({
+        where: {
+          busRouteId,
+        },
+        select: {
+          busRouteId: true,
+          stationId: true,
+          stationName: true,
+          stationSeq: true,
+          x: true,
+          y: true,
+        },
+        orderBy: {
+          stationSeq: 'asc', // 순서대로 정렬
+        },
+      }),
+    ]);
+
     if (!busRoute) {
       return NextResponse.json(
         { error: '해당 버스 노선을 찾을 수 없습니다.' },
         { status: 404 }
       );
     }
-    
-    // 버스 정류장 목록 조회
-    let stops = await prisma.busStop.findMany({
-      where: {
-        busRouteId,
-      },
-      select: {
-        busRouteId: true,
-        stationId: true,
-        stationName: true,
-        stationSeq: true,
-        x: true,
-        y: true,
-      },
-      orderBy: {
-        stationSeq: 'asc', // 순서대로 정렬
-      },
-    });
-    
+
+    let stops = savedStops;
+
     // DB에 정류장 정보가 없는 경우
     if (stops.length === 0) {
       if (isDevelopment) {
@@ -111,7 +114,7 @@ export async function GET(
       stops,
     }, {
       headers: {
-        'Cache-Control': 's-maxage=86400, stale-while-revalidate=3600',
+        'Cache-Control': ROUTE_INFO_CACHE_CONTROL,
       },
     });
   } catch (error) {
